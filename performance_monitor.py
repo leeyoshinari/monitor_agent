@@ -22,34 +22,25 @@ class PerMon(object):
         self.check_sysstat_version()
         self.IP = get_ip()
         self.room_id = None  # server room id
-        self.thread_pool = cfg.getAgent('threadPool') if cfg.getAgent('threadPool') >= 0 else 0
-        self._msg = {'port': [], 'pid': [], 'isRun': [], 'startTime': []}   # port、pid、status、startTime
-        self.is_system = cfg.getMonitor('isMonSystem')        # Whether to monitor the server system
+        self.group = None   # server group id
+        self.thread_pool = 2
+        self.is_system = 1        # Whether to monitor the server system
         self.error_times = cfg.getMonitor('errorTimes')
-        self.sleepTime = cfg.getMonitor('sleepTime')
         self.maxCPU = cfg.getMonitor('maxCPU')
         self.CPUDuration = cfg.getMonitor('CPUDuration')
         self.isCPUAlert = cfg.getMonitor('isCPUAlert')
         self.minMem = cfg.getMonitor('minMem')
         self.isMemAlert = cfg.getMonitor('isMemAlert')
-        self.isPidAlert = cfg.getMonitor('isPidAlert')
-        self.errorTimesOfPid = cfg.getMonitor('errorTimesOfPid')
         self.frequencyFGC = cfg.getMonitor('frequencyFGC')
         self.isJvmAlert = cfg.getMonitor('isJvmAlert')
         self.echo = cfg.getMonitor('echo')
         self.isDiskAlert = cfg.getMonitor('isDiskAlert')
         self.maxDiskUsage = cfg.getMonitor('maxDiskUsage') / 100
-        self.isTCP = cfg.getMonitor('isTCP')
-        self.timeSetting = cfg.getMonitor('timeSetting')
 
         system_interval = cfg.getMonitor('systemInterval')
-        port_interval = cfg.getMonitor('portInterval')
         self.system_interval = max(system_interval, 1)   # If the set value is less than 1, the default is 1
-        self.port_interval = max(port_interval, 1)      # If the set value is less than 1, the default is 1
         self.system_interval = self.system_interval - 1.1      # Program running time
         self.system_interval = max(self.system_interval, 0)
-        self.port_interval = self.port_interval - 1.03       # Program running time
-        self.port_interval = max(self.port_interval, 0)
 
         self.system_version = ''   # system version
         self.cpu_info = ''
@@ -64,6 +55,7 @@ class PerMon(object):
         self.total_disk_h = 0     # total disk size, unit:T or G
         self.network_speed = cfg.getAgent('nicSpeed')  # bandwidth
         self.Retrans_num = self.get_RetransSegs()   # TCP retrans number
+        self.java_info = {'status': 0, 'pid': '', 'port': '', 'port_status': 0}
 
         self.influx_host = '127.0.0.1'
         self.influx_port = 8086
@@ -78,70 +70,35 @@ class PerMon(object):
         self.get_disks()
         self.get_system_net_speed()
         self.get_total_disk_size()
+        self.get_java_info()
 
         self.get_config_from_server()
         self.monitor_task = queue.Queue()   # FIFO queue
-        # thread pool, +2 is the need for monitoring system and registration service
-        self.executor = ThreadPoolExecutor(self.thread_pool + 2)
+        self.executor = ThreadPoolExecutor(self.thread_pool)
         self.client = influxdb.InfluxDBClient(self.influx_host, self.influx_port, self.influx_username,
                                               self.influx_password, self.influx_database)  # influxdb connection
 
         self.FGC = {}           # full gc times
         self.FGC_time = {}      # full gc time
         self.last_cpu_io = []   # recently cpu usage
-        self.is_java = {}       # whether is java, 0 or 1
 
         self.monitor()
 
     @property
     def start(self):
-        return self._msg
+        return self.is_system
 
     @start.setter
     def start(self, value):
-        if value['port']:
-            self.is_java_server(value['port'])  # Determine whether the port is java service
-            if value['port'] in self._msg['port']:  # If the port has been monitored, update it
-                index = self._msg['port'].index(value['port'])
-                self._msg['pid'][index] = value['pid']
-                # If the monitoring has been stopped, update the monitoring status and start monitoring time
-                if self._msg['isRun'][index] == 0:
-                    self._msg['isRun'][index] = value['is_run']
-                    self._msg['startTime'][index] = time.strftime('%Y-%m-%d %H:%M:%S')
-                    self.monitor_task.put((self.write_cpu_mem, index))  # Put the monitoring task into the queue
-
-                    self.FGC[str(value['port'])] = 0    # reset FGC times
-                    self.FGC_time[str(value['port'])] = []  # reset FGC time
-
-                    if self.monitor_task.qsize() > 0:   # If the queue is not empty, the monitoring status is set to 2
-                        self._msg['isRun'][index] = 2   # queueing
-                else:
-                    self._msg['isRun'][index] = value['is_run']
-                    self._msg['startTime'][index] = time.strftime('%Y-%m-%d %H:%M:%S')
-            else:
-                self._msg['pid'].append(value['pid'])   # If the port has not been monitored, add it
-                self._msg['port'].append(value['port'])
-                self._msg['isRun'].append(value['is_run'])
-                self._msg['startTime'].append(time.strftime('%Y-%m-%d %H:%M:%S'))
-                self.monitor_task.put((self.write_cpu_mem, len(self._msg['port'])-1))  # Put the monitoring task into the queue
-
-                self.FGC.update({str(value['port']): 0})    # initialize FGC times
-                self.FGC_time.update({str(value['port']): []})  # initialize FGC time
-
-                if self.monitor_task.qsize() > 0:   # If the queue is not empty, the monitoring status is set to 2
-                    self._msg['isRun'][-1] = 2      # queueing
-
-        else:
-            raise Exception('Parameter Exception')
+        self.is_system = value
 
     @property
     def stop(self):
-        return self._msg
+        return self.is_system
 
     @stop.setter
     def stop(self, value):
-        index = self._msg['port'].index(value['port'])
-        self._msg['isRun'][index] = value['is_run']
+        self.is_system = 0
 
     def get_config_from_server(self):
         url = f'http://{cfg.getServer("address")}/Register/first'
@@ -176,6 +133,8 @@ class PerMon(object):
                         self.influx_username = response_data['data']['username']
                         self.influx_password = response_data['data']['password']
                         self.influx_database = response_data['data']['database']
+                        self.group = response_data['data']['group_identifier']
+                        self.room_id = response_data['data']['room_id']
                         break
                     else:
                         logger.error(response_data['msg'])
@@ -202,111 +161,13 @@ class PerMon(object):
         start monitoring
         :return:
         """
-        for i in range(self.thread_pool + 2):
+        for i in range(self.thread_pool):
             self.executor.submit(self.worker)
 
         # Put registration and cleanup tasks in the queue
         self.monitor_task.put((self.register_agent, True))
         # Put the tasks of the monitoring system into the queue
         self.monitor_task.put((self.write_system_cpu_mem, 1))
-
-    def write_cpu_mem(self, index):
-        """
-        Monitoring port. CPU, Memory, jvm(Java), disk read and write
-        :param index: Subscript index of the port
-        :return:
-        """
-        self._msg['startTime'][index] = time.strftime('%Y-%m-%d %H:%M:%S')      # Update start monitoring time
-
-        jvm = 0.0    # Initialize jvm, used for non-java services
-        run_error_times = 0    # Initialize the times that the continuous failure to execute monitoring commands
-        port = self._msg['port'][index]
-        pid = self._msg['pid'][index]
-        is_run_jvm = self.is_java.get(str(port), 0)
-
-        line = [{'measurement': self.room_id,
-                 'tags': {'host': self.IP, 'type': str(port)},
-                 'fields': {
-                     'cpu': 0.0,
-                     'wait_cpu': 0.0,
-                     'mem': 0.0,
-                     'jvm': 0.0,
-                     'rKbs': 0.0,
-                     'wKbs': 0.0,
-                     'iodelay': 0.0,
-                     'tcp': 0,
-                     'close_wait': 0,
-                     'time_wait': 0
-                 }}]
-
-        while True:
-            if self._msg['isRun'][index] > 0:   # Start monitoring
-                self._msg['isRun'][index] = 1   # Reset the status to monitoring
-                try:
-                    pid_info = self.get_pid_cpu_mem_io(pid)    # get CPU, disk read and write
-
-                    if not pid_info:     # If the CPU usage rate is None, the monitoring command is executed wrong.
-                        logger.warning(f'The CPU is NOne, the abnormal pid is {pid}')
-                        pid = port_to_pid(port)  # Query pid based on port
-                        if pid:     # If the pid exists, update it
-                            self._msg['pid'][index] = pid
-                            self._msg['startTime'][index] = time.strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            run_error_times += 1
-
-                        # If continuous execution commands fails, stop monitoring
-                        if run_error_times > self.error_times:
-                            self._msg['isRun'][index] = 0
-                            logger.error(f'The port {port} fails to execute commands continuously within '
-                                         f'{self.error_times * self.sleepTime}s, and the monitoring has stopped.')
-                            time.sleep(1)
-                            break
-
-                        if self.isPidAlert:
-                            if run_error_times > self.errorTimesOfPid:
-                                msg = f'The port {port} of the {self.IP} failed to execute commands continuously within ' \
-                                      f'{self.errorTimesOfPid * self.sleepTime}s, and the monitoring had been stopped.'
-                                logger.warning(msg)
-                                self._msg['isRun'][index] = 0
-                                thread = threading.Thread(target=notification, args=(msg,))  # Start thread to send email
-                                thread.start()
-                                time.sleep(1)
-                                break
-
-                        time.sleep(self.sleepTime)
-                        continue
-
-                    line[0]['fields']['cpu'] = pid_info['cpu']
-                    line[0]['fields']['wait_cpu'] = pid_info['wait_cpu']
-                    line[0]['fields']['mem'] = pid_info['mem']
-                    line[0]['fields']['rKbs'] = pid_info['kB_rd']
-                    line[0]['fields']['wKbs'] = pid_info['kB_wr']
-                    line[0]['fields']['iodelay'] = pid_info['iodelay']
-
-                    tcp_num = self.get_port_tcp(port)
-                    line[0]['fields']['tcp'] = tcp_num.get('tcp', 0)
-                    line[0]['fields']['close_wait'] = tcp_num.get('close_wait', 0)
-                    line[0]['fields']['time_wait'] = tcp_num.get('time_wait', 0)
-
-                    if is_run_jvm:
-                        jvm = self.get_jvm(port, pid)     # get JVM size
-                        line[0]['fields']['jvm'] = jvm
-
-                    self.client.write_points(line)    # write database
-                    logger.info(f'cpu_and_mem: port_{port},pid_{pid},{pid_info},{jvm}')
-                    run_error_times = 0    # If the monitoring command is executed successfully, reset it
-
-                except(Exception):
-                    logger.error(traceback.format_exc())
-                    time.sleep(self.sleepTime)
-
-                time.sleep(self.port_interval)
-
-            if self._msg['isRun'][index] == 0:   # If status=0, stop monitoring
-                logger.info(f'Port {port} has been stopped monitoring.')
-                self.FGC[str(port)] = 0
-                self._msg['isRun'][index] = 0
-                break
 
     def write_system_cpu_mem(self, is_system):
         """
@@ -318,8 +179,9 @@ class PerMon(object):
         mem_flag = True     # Flag of whether to send mail when the free memory is too low
         echo = True         # Flag of whether to clean up cache
         line = [{'measurement': self.room_id,
-                 'tags': {'host': self.IP, 'type': 'system'},
+                 'tags': {'host': self.IP, 'group': self.group, 'type': 'system'},
                  'fields': {
+                     'c_time': '',
                      'cpu': 0.0,
                      'iowait': 0.0,
                      'usr_cpu': 0.0,
@@ -329,7 +191,11 @@ class PerMon(object):
                      'trans': 0.0,
                      'net': 0.0,
                      'tcp': 0,
-                     'retrans': 0
+                     'retrans': 0,
+                     'port_tcp': 0,
+                     'close_wait': 0,
+                     'time_wait': 0,
+                     'jvm': 0
                  }}]
         for disk in self.all_disk:
             # The system disks exists in the format of 'sda-1'. Since influxdb cannot recognize the '-', need to replace it.
@@ -368,10 +234,12 @@ class PerMon(object):
                         line[0]['fields']['net'] = res['network']
                         line[0]['fields']['tcp'] = res['tcp']
                         line[0]['fields']['retrans'] = res['retrans']
+                        line[0]['fields']['port_tcp'] = res['port_tcp']
+                        line[0]['fields']['close_wait'] = res['close_wait']
+                        line[0]['fields']['time_wait'] = res['time_wait']
+                        line[0]['fields']['jvm'] = res['jvm']
                         self.client.write_points(line)    # write to database
-                        logger.info(f"system: CpuAndMem,{res['cpu']},{res['mem']},{res['disk']},{res['disk_r']},"
-                                    f"{res['disk_w']},{res['rece']},{res['trans']},{res['network']}, "
-                                    f"{res['tcp']}, {res['retrans']}")
+                        logger.info(f"system:{res}")
 
                         if len(self.last_cpu_io) > self.CPUDuration:
                             self.last_cpu_io.pop(0)
@@ -414,65 +282,6 @@ class PerMon(object):
             else:
                 time.sleep(3)
 
-    @handle_exception(is_return=True, default_value=(None, None))
-    def get_cpu_mem(self, pid):
-        """
-        Get CPU usage and Memory of pid. Now it is not used
-        :param pid: pid
-        :return: CPU usage(%), Memory(G)
-        """
-        cpu = None
-        mem = None
-
-        # result = os.popen(f'top -n 1 -b -p {pid}').readlines()
-        result = os.popen(f'top -n 1 -b |grep -P {pid}').readlines()
-        res = [ress.split() for ress in result]
-        logger.debug(f'The CPU and Mem of pid {pid} is: {res}')
-
-        for r in res:
-            if str(pid) == r[0]:
-                ind = r.index(str(pid))
-                cpu = float(r[ind + 8]) / self.cpu_cores      # CPU usage
-                mem = float(r[ind + 9]) * self.total_mem_100      # Memory
-
-        return cpu, mem
-
-    @handle_exception(is_return=True, default_value=[])
-    def get_pid_cpu_mem_io(self, pid):
-        """
-            Get CPU usage, Memor, and disk of pid.
-            :param pid: pid
-            :return: CPU usage(%), Memory(G), Disk Read and Write(kB/s)
-        """
-        pid_info = {'kB_rd': 0.0, 'kB_wr': 0.0, 'iodelay': 0.0, 'VSZ': 0.0, 'RSS': 0.0, 'mem': 0.0, 'usr_cpu': 0.0,
-                    'system_cpu': 0.0, 'guest_cpu': 0.0, 'wait_cpu': 0.0, 'cpu': 0.0}
-
-        res = os.popen(f'pidstat -u -r -d -p {pid} 1 1').readlines()[::-1][:9]
-
-        if res:
-            for i in range(len(res)):
-                if 'iodelay' in res[i]:
-                    io = res[i - 1].split()
-                    pid_info['kB_rd'] = float(io[3]) / 1024    # Read from disk per second (kB)
-                    pid_info['kB_wr'] = float(io[4]) / 1024   # Write to disk per second (kB)
-                    # pid_info['iodelay'] = float(io[6])  # I/O delay(unit: clock cycle)
-                if 'MEM' in res[i]:
-                    memory = res[i - 1].split()
-                    # pid_info['VSZ'] = float(memory[5]) / 1024   # Virtual memory
-                    # pid_info['RSS'] = float(memory[6]) / 1024   # Physical memory
-                    pid_info['mem'] = float(memory[7]) * self.total_mem_100          # Memory size
-                if 'CPU' in res[i]:
-                    cpu_res = res[i - 1].split()
-                    # pid_info['usr_cpu'] = float(cpu_res[3]) / self.cpu_cores
-                    # pid_info['system_cpu'] = float(cpu_res[4]) / self.cpu_cores
-                    # pid_info['guest_cpu'] = float(cpu_res[5]) / self.cpu_cores
-                    # pid_info['wait_cpu'] = float(cpu_res[6]) / self.cpu_cores  # CPU usage waiting for context switch
-                    pid_info['cpu'] = float(cpu_res[7]) / self.cpu_cores       # CPU usage
-
-            return pid_info
-        else:
-            return res
-
     @handle_exception(is_return=True, default_value=0)
     def get_jvm(self, port, pid):
         """
@@ -481,7 +290,11 @@ class PerMon(object):
         :param pid: pid
         :return: jvm(G)
         """
-        result = os.popen(f'jstat -gc {pid}').readlines()[1]
+        try:
+            result = os.popen(f'jstat -gc {pid}').readlines()[1]
+        except IndexError:
+            self.java_info['status'] = 0
+            return 0
         res = result.strip().split()
         logger.debug(f'The JVM of pid {pid} is: {res}')
         mem = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])     # calculate JVM
@@ -528,6 +341,10 @@ class PerMon(object):
         rece = None
         trans = None
         network = None
+        port_tcp = 0
+        close_wait = 0
+        time_wait = 0
+        jvm = 0
         if self.nic:
             bps1 = os.popen(f'cat /proc/net/dev |grep {self.nic}').readlines()
             logger.debug(f'The result of speed for the first time is: {bps1}')
@@ -565,6 +382,13 @@ class PerMon(object):
                 break
 
         mem, mem_available = self.get_free_memory()
+        if self.java_info['port_status'] == 1:
+            tcp_num = self.get_port_tcp(self.java_info['port'], self.java_info['pid'])
+            port_tcp = tcp_num.get('tcp', 0)
+            close_wait = tcp_num.get('close_wait', 0)
+            time_wait = tcp_num.get('time_wait', 0)
+        if self.java_info['status'] == 1:
+            jvm = self.get_jvm(self.java_info['port'], self.java_info['pid'])  # get JVM size
 
         if bps1 and bps2:
             data1 = bps1[0].split()
@@ -581,7 +405,8 @@ class PerMon(object):
 
         return {'disk': disk, 'disk_r': disk_r, 'disk_w': disk_w, 'disk_d': disk_d, 'cpu': cpu, 'iowait': iowait,
                 'usr_cpu': usr_cpu, 'mem': mem, 'mem_available': mem_available, 'rece': rece, 'trans': trans,
-                'network': network, 'tcp': tcp, 'retrans': Retrans}
+                'network': network, 'tcp': tcp, 'retrans': Retrans, 'port_tcp': port_tcp, 'close_wait': close_wait,
+                'time_wait': time_wait, 'jvm': jvm}
 
     @staticmethod
     def get_free_memory():
@@ -604,52 +429,40 @@ class PerMon(object):
 
         return mem, mem_available
 
-    '''def get_handle(pid):
-        """
-        Get the number of handles occupied by the process
-        :param pid: pid
-        :return: the number of handles
-        """
-        result = os.popen("lsof -n | awk '{print $2}'| sort | uniq -c | sort -nr | " + "grep {}".format(pid)).readlines()
-        res = result[0].strip().split(' ')
-        logger.debug(res)
-        handles = None
-        if str(pid) in res:
-            handles = int(res[0])
-
-        return handles'''
-
     @handle_exception(is_return=True, default_value=(0, 0))
     def get_tcp(self):
         """
         Get the number of TCP and calculate the retransmission rate
         :return:
         """
-        tcp = 0
-        Retrans = 0
-        if self.isTCP:
-            result = os.popen('cat /proc/net/snmp |grep Tcp').readlines()
-            tcps = result[-1].split()
-            logger.debug(f'The TCP is: {tcps}')
-            tcp = int(tcps[9])      # TCP connections
-            Retrans = int(tcps[-4]) - self.Retrans_num
-            self.Retrans_num = int(tcps[-4])
+        result = os.popen('cat /proc/net/snmp |grep Tcp').readlines()
+        tcps = result[-1].split()
+        logger.debug(f'The TCP is: {tcps}')
+        tcp = int(tcps[9])      # TCP connections
+        Retrans = int(tcps[-4]) - self.Retrans_num
+        self.Retrans_num = int(tcps[-4])
 
         return tcp, Retrans
 
     @handle_exception(is_return=True, default_value={})
-    def get_port_tcp(self, port):
+    def get_port_tcp(self, port, pid):
         """
         Get the number of TCP connections for the port
         :param port: port
         :return:
         """
         tcp_num = {}
-        res = os.popen(f'netstat -ant |grep {port}').read()
-        tcp_num.update({'tcp': res.count('tcp')})
-        tcp_num.update({'established': res.count('ESTABLISHED')})
-        tcp_num.update({'close_wait': res.count('CLOSE_WAIT')})
-        tcp_num.update({'time_wait': res.count('TIME_WAIT')})
+        try:
+            res = os.popen(f'netstat -ant |grep {port}').read()
+            if res.count('LISTEN') == 0 and res.count(pid) == 0:
+                self.java_info['port_status'] = 0
+                self.java_info['status'] = 0
+            tcp_num.update({'tcp': res.count('tcp')})
+            tcp_num.update({'established': res.count('ESTABLISHED')})
+            tcp_num.update({'close_wait': res.count('CLOSE_WAIT')})
+            tcp_num.update({'time_wait': res.count('TIME_WAIT')})
+        except Exception as err:
+            logger.info(err)
         return tcp_num
 
     def get_cpu_cores(self):
@@ -855,32 +668,41 @@ class PerMon(object):
             Get the number of TCP RetransSegs
             :return:
         """
-        Retrans = 0
-        if self.isTCP:
-            result = os.popen('cat /proc/net/snmp |grep Tcp').readlines()
-            tcps = result[-1].split()
-            logger.debug(f'The TCP is: {tcps}')
-            Retrans = int(tcps[-4])
+        result = os.popen('cat /proc/net/snmp |grep Tcp').readlines()
+        tcps = result[-1].split()
+        logger.debug(f'The TCP is: {tcps}')
+        Retrans = int(tcps[-4])
 
         return Retrans
 
-    def is_java_server(self, port):
+    def get_java_info(self):
         """
-        Determine whether the port is java service
-        :param port: port
+        Find java service
         """
-        pid = port_to_pid(port)
         try:
-            result = os.popen(f'jstat -gc {pid} |tr -s " "').readlines()[1]
-            res = result.strip().split(' ')
-            logger.info(f'The JVM of {pid} is {res}')
-            _ = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])
-
-            self.is_java.update({str(port): 1})
+            pid = os.popen("ps -ef|grep java |grep " + self.group + " |grep -v grep |awk '{print $1}'").readlines()[0]
+            if pid.strip():
+                self.java_info['pid'] = pid.strip()
+                port = os.popen("netstat -antp|grep " + self.java_info['pid'] + " |grep LISTEN |tr -s ' ' |awk '{print $4}' | awk -F ':' '{print $2}'").readlines()[0]
+                self.java_info['port'] = port.strip()
+                self.java_info['port_status'] = 1
+                try:
+                    result = os.popen(f'jstat -gc {self.java_info["pid"]} |tr -s " "').readlines()[1]
+                    res = result.strip().split(' ')
+                    logger.info(f'The JVM of {pid} is {res}')
+                    _ = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])
+                    self.java_info['status'] = 1
+                except Exception as err:
+                    logger.warning(err)
+                    self.java_info['status'] = 0
+            else:
+                self.java_info['status'] = 0
+                self.java_info['port_status'] = 0
 
         except Exception as err:
             logger.warning(err)
-            self.is_java.update({str(port): 0})
+            self.java_info['status'] = 0
+            self.java_info['port_status'] = 0
 
     def check_sysstat_version(self):
         """
@@ -916,37 +738,6 @@ class PerMon(object):
             logger.error(msg)
             raise Exception(msg)
 
-    @handle_exception(is_return=True)
-    def clear_port(self):
-        """
-        Clean up ports that have been stopped monitoring
-        :return:
-        """
-        stop_num = self._msg['isRun'].count(0)
-
-        if stop_num > 0:
-            port_list = copy.deepcopy(self._msg)
-            # stop all monitoring
-            for ind in range(len(self._msg['port'])):
-                if self._msg['isRun'][ind] > 0:
-                    self._msg['isRun'][ind] = 0
-
-            self.FGC = {}   # reset FGC times
-            self.FGC_time = {}  # reset FGC time
-            self.is_java = {}
-            time.sleep(self.port_interval + 5)  # Wait for all ports to stop monitoring
-            self._msg = {'port': [], 'pid': [], 'isRun': [], 'startTime': []}
-
-            # Start monitoring again
-            for ind in range(len(port_list['port'])):
-                if port_list['isRun'][ind] > 0:
-                    self.start = {'port': port_list['port'][ind], 'pid': port_list['pid'][ind], 'is_run': 1}
-
-            del port_list
-            logger.info('Successfully clean up the ports that stopped monitoring.')
-        else:
-            logger.info('There is no port that stopped monitoring.')
-
     def register_agent(self, disk_flag=True):
         """
         Timed task. One is register, the other one is clean up the ports that stopped monitoring.
@@ -975,6 +766,7 @@ class PerMon(object):
         }
         start_time = time.time()
         disk_start_time = time.time()
+        java_start_time = time.time()
 
         while True:
             try:
@@ -984,9 +776,6 @@ class PerMon(object):
                     res = requests.post(url=url, json=post_data, headers=header)
                     logger.info('Agent registers successful ~')
                     start_time = time.time()
-                    if time.strftime('%H:%M') == self.timeSetting:  # clean up
-                        logger.debug('Cleaning up the ports that stopped monitoring.')
-                        self.clear_port()
 
                 if time.time() - disk_start_time > 300:
                     disk_usage = self.get_used_disk_rate()
@@ -1004,9 +793,13 @@ class PerMon(object):
                         else:
                             disk_flag = True
 
+                if self.java_info['port_status'] == 0 and time.time() - java_start_time > 59:
+                    self.get_java_info()
+                    java_start_time = time.time()
+
                 time.sleep(5)
 
-            except(Exception):
+            except:
                 logger.error(traceback.format_exc())
                 time.sleep(3)
 
@@ -1031,12 +824,9 @@ def port_to_pid(port):
     :return: pid
     """
     pid = None
-    result = os.popen(f'netstat -nlp|grep {port}').readlines()
+    result = os.popen(f'netstat -nlp|grep :{port}').readlines()
     logger.debug(f'The result of the port {port} is {result}')
-    flag = f':{port}'
-    res = [line.strip() for line in result if flag in line]
-    logger.debug(res[0])
-    p = res[0].split()
+    p = result[0].split()
     pp = p[3].split(':')[-1]
     if str(port) == pp:
         pid = p[p.index('LISTEN') + 1].split('/')[0]
