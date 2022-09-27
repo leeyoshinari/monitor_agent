@@ -36,74 +36,13 @@ async def run_monitor(request):
     """
     try:
         data = await request.json()
-        host = data.get('host')
-        port = data.get('port')
         is_run = data.get('isRun')
-
-        if host == HOST:
-            if port:
-                pid = port_to_pid(port)
-                if pid is None:
-                    logger.warning(f"Port {port} is not started!")
-                    return web.json_response({
-                        'code': 1, 'msg': f"Port {port} is not started!", 'data': {'host': host, 'port': port, 'pid': None}})
-
-                if is_run == '0':   # stop monitoring
-                    if port in permon.stop['port']:     # whether the port has been monitored.
-                        permon.stop = {'port': port, 'pid': pid, 'is_run': 0}
-                        logger.info('Stop monitoring successfully!')
-                        return web.json_response({
-                            'code': 0, 'msg': 'Stop monitoring successfully!', 'data':
-                                {'host': host, 'port': port, 'pid': pid}})
-                    else:
-                        logger.warning(f"The port {port} has not been monitored, please monitor it first.")
-                        return web.json_response({
-                            'code': 1, 'msg': f"The port {port} has not been monitored, please monitor it first.",
-                            'data': {'host': host, 'port': port, 'pid': pid}})
-
-                if is_run == '1':       # start monitoring
-                    permon.start = {'port': port, 'pid': pid, 'is_run': 1}
-                    logger.info('Start monitoring successfully!')
-                    return web.json_response({
-                        'code': 0, 'msg': 'Start monitoring successfully!', 'data': {'host': host, 'port': port, 'pid': pid}})
-
-            else:
-                logger.error('Request parameter exception.')
-                return web.json_response({
-                    'code': 2, 'msg': 'Request parameter exception.', 'data': {'host': host, 'port': port, 'pid': None}})
-        else:
-            logger.error('Request parameter exception.')
-            return web.json_response({
-                'code': 2, 'msg': 'Request parameter exception.', 'data': {'host': host, 'port': port, 'pid': None}})
+        permon.start = int(is_run)
 
     except Exception as err:
         logger.error(traceback.format_exc())
         return web.json_response({
             'code': 2, 'msg': str(err), 'data': {'host': HOST, 'port': None, 'pid': None}})
-
-
-async def get_monitor(request):
-    """
-     Get the list of monitoring ports
-    :param request:
-    :return:
-    """
-    data = await request.json()
-    host = data.get('host')
-    if host == HOST:
-        msg = permon.start
-        if len(msg['port']) > 0:    # Whether the server has been monitored ports
-            data = {'host': [host]*len(msg['port'])}
-            data.update(msg)
-            return web.json_response({'code': 0, 'msg': 'Successful!', 'data': data})
-        else:
-            logger.error('No ports are monitored yet.')
-            return web.json_response({
-                'code': 1, 'msg': 'No ports are monitored yet', 'data': {'host': host, 'port': None, 'pid': None}})
-    else:
-        logger.error('Request parameter exception.')
-        return web.json_response({
-            'code': 2, 'msg': 'Request parameter exception.', 'data': {'host': host, 'port': None, 'pid': None}})
 
 
 async def get_gc(request):
@@ -169,7 +108,6 @@ async def main():
     app.router.add_route('GET', '/', index)
     app.router.add_route('GET', '/stop', stop_monitor)
     app.router.add_route('POST', '/runMonitor', run_monitor)
-    app.router.add_route('POST', '/getMonitor', get_monitor)
     app.router.add_route('GET', '/getGC/{port}', get_gc)
 
     runner = web.AppRunner(app)

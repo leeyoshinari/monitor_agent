@@ -92,14 +92,6 @@ class PerMon(object):
     def start(self, value):
         self.is_system = value
 
-    @property
-    def stop(self):
-        return self.is_system
-
-    @stop.setter
-    def stop(self, value):
-        self.is_system = 0
-
     def get_config_from_server(self):
         url = f'http://{cfg.getServer("address")}/Register/first'
         header = {
@@ -238,6 +230,7 @@ class PerMon(object):
                         line[0]['fields']['close_wait'] = res['close_wait']
                         line[0]['fields']['time_wait'] = res['time_wait']
                         line[0]['fields']['jvm'] = res['jvm']
+                        line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
                         self.client.write_points(line)    # write to database
                         logger.info(f"system:{res}")
 

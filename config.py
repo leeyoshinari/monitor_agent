@@ -16,9 +16,6 @@ class Config(object):
         else:
             return self.cfg.get('agent', key, fallback=None)
 
-    def getInflux(self, key):
-        return self.cfg.get('influx', key, fallback=None)
-
     def getServer(self, key):
         return self.cfg.get('server', key, fallback=None)
 
