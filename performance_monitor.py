@@ -118,7 +118,7 @@ class PerMon(object):
         self.is_system = value
 
     def get_config_from_server(self):
-        url = f'http://{cfg.getServer("address")}/Register/first'
+        url = f'http://{cfg.getServer("address")}/register/first'
         header = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate",
@@ -457,8 +457,11 @@ class PerMon(object):
         total_disk_r = sum(disk_r)
         total_disk_w = sum(disk_w)
         total_disk = total_disk_r + total_disk_w
-        disk_list = [(x + y) / total_disk * z for x, y, z in zip(disk_r, disk_w, disk1)]
-        disk = sum(disk_list)
+        if total_disk == 0:
+            disk = 0
+        else:
+            disk_list = [(x + y) / total_disk * z for x, y, z in zip(disk_r, disk_w, disk1)]
+            disk = sum(disk_list)
 
         mem, mem_available = self.get_free_memory()
         if self.java_info['port_status'] == 1:
