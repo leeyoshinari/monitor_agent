@@ -1,4 +1,4 @@
-# performace_monitor
+# monitor_agent
 [中文文档](https://github.com/leeyoshinari/monitor_agent/blob/main/README_zh_CN.md)
 
 For more information, please visit the [Source Repository](https://github.com/leeyoshinari/performance_monitor) . This Repository is modified based on the [Source Repository](https://github.com/leeyoshinari/performance_monitor), it is only used with [this Repository](https://github.com/leeyoshinari/MyPlatform) .
@@ -51,6 +51,7 @@ For more information, please visit the [Source Repository](https://github.com/le
 ## Package
 Using `pyinstaller` to package python code. After packaging, it can be quickly deployed on other Servers without installing python3.7+ and third-party packages.<br>
 Before packaging, you must ensure that the python code can run normally.<br>
+
     (1) Enter folder, run:<br>
     ```shell
     pyinstaller -F server.py -p performance_monitor.py -p logger.py -p config.py -p common.py -p __init__.py --hidden-import logger --hidden-import performance_monitor --hidden-import common --hidden-import config

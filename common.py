@@ -33,6 +33,7 @@ def handle_exception(errors=(Exception, ), is_return=False, is_return_error_msg=
                 try:
                     return func(*args, **kwargs)
                 except errors:
+                    logger.error(traceback.format_exc())
                     raise
 
         return decorator1
@@ -45,8 +46,8 @@ def get_ip():
     Get server's IP address
     :return: IP address
     """
-    if cfg.getAgent('host'):
-        IP = cfg.getAgent('host')
+    if cfg.getServer('host'):
+        IP = cfg.getServer('host')
     else:
         result = os.popen("hostname -I |awk '{print $1}'").readlines()
         logger.debug(result)
