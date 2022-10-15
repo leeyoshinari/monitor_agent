@@ -60,7 +60,7 @@ class PerMon(object):
         self.all_disk = []      # disk number
         self.total_disk = 1     # total disk size, unit: M
         self.total_disk_h = 0     # total disk size, unit:T or G
-        self.network_speed = cfg.getAgent('nicSpeed')  # bandwidth
+        self.network_speed = cfg.getServer('nicSpeed')  # bandwidth
         self.Retrans_num = self.get_RetransSegs()   # TCP retrans number
         self.java_info = {'status': 0, 'pid': '', 'port': '', 'port_status': 0}
         self.gc_info = [-1, -1, -1, -1]     # 'ygc', 'ygct', 'fgc', 'fgct'
@@ -125,7 +125,7 @@ class PerMon(object):
             "Content-Type": "application/json; charset=UTF-8"}
         post_data = {
             'host': self.IP,
-            'port': cfg.getAgent('port'),
+            'port': cfg.getServer('port'),
             'system': self.system_version,
             'cpu': self.cpu_cores,
             'cpu_usage': self.cpu_usage,
@@ -709,14 +709,17 @@ class PerMon(object):
                 if 'Speed' in line:
                     logger.debug(f'The bandwidth is {line}')
                     res = re.findall(r"(\d+)", line)
-                    speed = int(res[0])
-                    if 'G' in line:
-                        speed = speed * 1024
-                    if 'K' in line:
-                        speed = speed / 1024
+                    try:
+                        speed = int(res[0])
+                        if 'G' in line:
+                            speed = speed * 1024
+                        if 'K' in line:
+                            speed = speed / 1024
 
-                    self.network_speed = speed
-                    break
+                        self.network_speed = speed
+                        break
+                    except IndexError:
+                        logger.error(traceback.format_exc())
 
             logger.info(f'The bandwidth of ethernet is {self.network_speed}Mb/s')
 
@@ -833,7 +836,7 @@ class PerMon(object):
             "Content-Type": "application/json; charset=UTF-8"}
         post_data = {
             'host': self.IP,
-            'port': cfg.getAgent('port'),
+            'port': cfg.getServer('port'),
             'system': self.system_version,
             'cpu': self.cpu_cores,
             'cpu_usage': self.cpu_usage,
