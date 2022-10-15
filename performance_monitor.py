@@ -298,7 +298,7 @@ class PerMon(object):
             self.last_io_usage.pop(0)
 
         self.last_cpu_usage.append(res['cpu'])
-        self.last_net_usage.append(res['net'])
+        self.last_net_usage.append(res['network'])
         self.last_io_usage.append(res['disk'])
         self.cpu_usage = sum(self.last_cpu_usage) / self.PeriodLength  # CPU usage, with %
         self.mem_usage = 1 - res['mem_available'] / self.total_mem  # Memory usage, without %
@@ -485,7 +485,7 @@ class PerMon(object):
 
         tcp, Retrans = self.get_tcp()
 
-        return {'disk': disk, 'disk_r': total_disk_r, 'disk_w': total_disk_w, 'disk_d': 0, 'cpu': cpu, 'iowait': iowait,
+        return {'disk': disk, 'disk_r': total_disk_r, 'disk_w': total_disk_w, 'disk_d': 0.0, 'cpu': cpu, 'iowait': iowait,
                 'usr_cpu': usr_cpu, 'mem': mem, 'mem_available': mem_available, 'rec': rec, 'trans': trans,
                 'network': network, 'tcp': tcp, 'retrans': Retrans, 'port_tcp': port_tcp, 'close_wait': close_wait,
                 'time_wait': time_wait, 'jvm': jvm}
