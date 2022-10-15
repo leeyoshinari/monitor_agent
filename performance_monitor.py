@@ -5,7 +5,6 @@ import os
 import re
 import time
 import json
-import copy
 import queue
 import traceback
 import threading
@@ -212,8 +211,8 @@ class PerMon(object):
                  'fields': {'c_time': time.strftime("%Y-%m-%d %H:%M:%S"),
                      'cpu': data[0], 'iowait': data[1], 'usr_cpu': data[2], 'mem': data[3], 'mem_available': data[4],
                      'jvm': data[5], 'disk': data[6], 'disk_r': data[7], 'disk_w': data[8], 'disk_d': data[9],
-                     'rec': data[10], 'trans': data[11], 'net': data[12], 'tcp': data[13], 'retrans': data[14],
-                     'port_tcp': data[15], 'close_wait': data[16], 'time_wait': data[17]}}]
+                     'rec': data[10], 'trans': data[11], 'net': data[12], 'tcp': int(data[13]), 'retrans': int(data[14]),
+                     'port_tcp': int(data[15]), 'close_wait': int(data[16]), 'time_wait': int(data[17])}}]
         self.influx_client.write_points(line)  # write to database
 
     def write_system_cpu_mem(self, is_system):
@@ -245,6 +244,7 @@ class PerMon(object):
                      'close_wait': 0,
                      'time_wait': 0
                  }}]
+        self.redis_client.set(self.redis_num_key + self.IP, 1, ex=10)
         while True:
             if self.is_system:
                 try:
