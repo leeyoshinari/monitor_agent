@@ -352,7 +352,7 @@ class PerMon(object):
         else:
             self.net_flag = True  # If network usage is normally, reset it to True
 
-    @handle_exception(is_return=True, default_value=0)
+    @handle_exception(is_return=True, default_value=0.0)
     def get_jvm(self, port, pid):
         """
         JVM size
@@ -364,7 +364,7 @@ class PerMon(object):
             result = os.popen(f'jstat -gc {pid}').readlines()[1]
         except IndexError:
             self.java_info['status'] = 0
-            return 0
+            return 0.0
         res = result.strip().split()
         logger.debug(f'The JVM of pid {pid} is: {res}')
         mem = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])     # calculate JVM
@@ -413,7 +413,7 @@ class PerMon(object):
         port_tcp = 0
         close_wait = 0
         time_wait = 0
-        jvm = 0
+        jvm = 0.0
         disk1 = []
         disk_r = []
         disk_w = []
@@ -458,7 +458,7 @@ class PerMon(object):
         total_disk_w = sum(disk_w)
         total_disk = total_disk_r + total_disk_w
         if total_disk == 0:
-            disk = 0
+            disk = 0.0
         else:
             disk_list = [(x + y) / total_disk * z for x, y, z in zip(disk_r, disk_w, disk1)]
             disk = sum(disk_list)
