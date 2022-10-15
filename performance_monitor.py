@@ -134,7 +134,11 @@ class PerMon(object):
             'mem_usage': self.mem_usage,
             'disk_size': self.total_disk_h,
             'disk_usage': self.get_used_disk_rate(),
-            'disks': ','.join(self.all_disk)
+            'disks': ','.join(self.all_disk),
+            'net_usage': self.net_usage,
+            'io_usage': self.io_usage,
+            'gc': self.gc_info,
+            'ffgc': self.ffgc
         }
 
         while True:
