@@ -942,7 +942,7 @@ def notification(msg):
     :param msg: Email body
     :return:
     """
-    url = f'http://{cfg.getServer("address")}/Notification'
+    url = f'http://{cfg.getServer("address")}/register/notification'
 
     header = {
         "Accept": "application/json, text/plain, */*",
