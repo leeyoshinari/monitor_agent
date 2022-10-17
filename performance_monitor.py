@@ -43,7 +43,7 @@ class PerMon(object):
 
         system_interval = cfg.getMonitor('systemInterval')
         self.system_interval = max(system_interval, 1)   # If the set value is less than 1, the default is 1
-        self.system_interval = self.system_interval - 1.1      # Program running time
+        self.system_interval = self.system_interval - 1.05      # Program running time
         self.system_interval = max(self.system_interval, 0)
 
         self.system_version = ''   # system version
@@ -117,7 +117,7 @@ class PerMon(object):
         self.is_system = value
 
     def get_config_from_server(self):
-        url = f'http://{cfg.getServer("address")}/register/first'
+        url = f'http://{cfg.getServer("address")}/monitor/register/first'
         header = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate",
@@ -836,7 +836,7 @@ class PerMon(object):
         :param
         :return:
         """
-        url = f'http://{cfg.getServer("address")}/register'
+        url = f'http://{cfg.getServer("address")}/monitor/register'
         header = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate",
@@ -942,7 +942,7 @@ def notification(msg):
     :param msg: Email body
     :return:
     """
-    url = f'http://{cfg.getServer("address")}/register/notification'
+    url = f'http://{cfg.getServer("address")}/monitor/register/notification'
 
     header = {
         "Accept": "application/json, text/plain, */*",
