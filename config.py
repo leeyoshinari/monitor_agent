@@ -8,7 +8,7 @@ import configparser
 class Config(object):
     def __init__(self):
         self.cfg = configparser.ConfigParser()
-        self.cfg.read('config.ini', encoding='utf-8')
+        self.cfg.read('config.conf', encoding='utf-8')
 
     def getServer(self, key):
         if key == 'nicSpeed':

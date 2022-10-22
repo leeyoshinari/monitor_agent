@@ -117,7 +117,7 @@ class PerMon(object):
         self.is_system = value
 
     def get_config_from_server(self):
-        url = f'http://{cfg.getServer("address")}/monitor/register/first'
+        url = f'http://{cfg.getServer("address")}/monitor/server/register/first'
         header = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate",
@@ -836,7 +836,7 @@ class PerMon(object):
         :param
         :return:
         """
-        url = f'http://{cfg.getServer("address")}/monitor/register'
+        url = f'http://{cfg.getServer("address")}/monitor/server/register'
         header = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate",
