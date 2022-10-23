@@ -13,6 +13,9 @@ from performance_monitor import PerMon, port_to_pid
 
 permon = PerMon()
 HOST = get_ip()
+PID = os.getpid()
+with open('pid', 'w', encoding='utf-8') as f:
+    f.write(str(PID))
 
 
 async def index(request):
