@@ -157,7 +157,7 @@ class PerMon(object):
                         self.redis_port = response_data['data']['redis']['port']
                         self.redis_password = response_data['data']['redis']['password']
                         self.redis_db = response_data['data']['redis']['db']
-                        self.group = response_data['data']['groupKey']
+                        self.group = 'server_' + response_data['data']['groupKey']
                         self.room_id = response_data['data']['roomId']
                         break
                     else:
