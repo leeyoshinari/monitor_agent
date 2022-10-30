@@ -10,9 +10,7 @@ import traceback
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-import redis
 import requests
-import influxdb
 from common import handle_exception, get_ip
 from logger import logger, cfg
 
@@ -66,16 +64,6 @@ class PerMon(object):
         self.gc_info = [-1, -1, -1, -1]     # 'ygc', 'ygct', 'fgc', 'fgct'
         self.ffgc = 999999
 
-        self.influx_host = '127.0.0.1'
-        self.influx_port = 8086
-        self.influx_username = 'root'
-        self.influx_password = '123456'
-        self.influx_database = 'test'
-        self.redis_host = '127.0.0.1'
-        self.redis_port = 6379
-        self.redis_password = '123456'
-        self.redis_db = 0
-
         self.get_system_version()
         self.get_cpu_cores()
         self.get_total_mem()
@@ -101,10 +89,6 @@ class PerMon(object):
         self.io_flag = True     # Flag of whether to send mail when the IO is too high
         self.net_flag = True    # Flag of whether to send mail when the Network usage is too high
 
-        self.influx_client = influxdb.InfluxDBClient(self.influx_host, self.influx_port, self.influx_username,
-                                              self.influx_password, self.influx_database)  # influxdb connection
-        self.redis_client = redis.Redis(host=self.redis_host, port=self.redis_port, password=self.redis_password,
-                                        db=self.redis_db, decode_responses=True)
         self.monitor()
 
     @property
@@ -130,15 +114,6 @@ class PerMon(object):
                 if res.status_code == 200:
                     response_data = json.loads(res.content.decode('unicode_escape'))
                     if response_data['code'] == 0:
-                        self.influx_host = response_data['data']['influx']['host']
-                        self.influx_port = response_data['data']['influx']['port']
-                        self.influx_username = response_data['data']['influx']['username']
-                        self.influx_password = response_data['data']['influx']['password']
-                        self.influx_database = response_data['data']['influx']['database']
-                        self.redis_host = response_data['data']['redis']['host']
-                        self.redis_port = response_data['data']['redis']['port']
-                        self.redis_password = response_data['data']['redis']['password']
-                        self.redis_db = response_data['data']['redis']['db']
                         self.group = 'server_' + response_data['data']['groupKey']
                         self.room_id = response_data['data']['roomId']
                         break
@@ -818,7 +793,7 @@ class PerMon(object):
                     post_data['net_usage'] = self.net_usage
                     post_data['gc'] = self.gc_info
                     post_data['ffgc'] = self.ffgc
-                    data_list = ['Server_' + self.IP, json.dumps(post_data, ensure_ascii=False), 10]
+                    data_list = ['Server_' + self.IP, json.dumps(post_data, ensure_ascii=False), 12]
                     res = http_post(url, {'data': data_list})
                     logger.info('Agent registers successful ~')
                     start_time = time.time()
