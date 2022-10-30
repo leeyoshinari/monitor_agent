@@ -51,17 +51,15 @@ For more information, please visit the [Source Repository](https://github.com/le
 ## Package
 Using `pyinstaller` to package python code. After packaging, it can be quickly deployed on other Servers without installing python3.7+ and third-party packages.<br>
 Before packaging, you must ensure that the python code can run normally.<br>
-
-    (1) Enter folder, run:<br>
+- (1) Enter folder, run:<br>
     ```shell
     pyinstaller -F server.py -p performance_monitor.py -p logger.py -p config.py -p common.py -p __init__.py --hidden-import logger --hidden-import performance_monitor --hidden-import common --hidden-import config
-    ```<br>
-    (2) Enter `dist` folder, find the executable file `server`,<br>
-    (3) Copy `config.ini` to the `dist` folder,<br>
-    (4) Copy the `dist` folder to other servers, and start server
-    ```shell
-    nohup ./server &
     ```
+- (2) Copy `config.conf` to the `dist` folder, cmd: `cp config.conf dist/`
+- (3) Enter `dist` folder, zip files, cmd: `zip monitor_agent.zip server config.conf`
+- (4) Upload zip file to [MyPlatform](https://github.com/leeyoshinari/MyPlatform.git)
+- (5) Deploy monitor_agent
+   
    NOTE: Since it runs on the server to be monitored, the executable file packaged on the server of the CentOS system X86 architecture can only run on the server of the CentOS system X86 architecture; servers of other system and architecture need to be repackaged. <br>
 
 ## Note

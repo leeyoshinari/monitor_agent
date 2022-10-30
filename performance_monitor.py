@@ -21,6 +21,7 @@ class PerMon(object):
     def __init__(self):
         self.check_sysstat_version()
         self.IP = get_ip()
+        self.influx_post_url = f'http://{cfg.getLogging("address")}/influx/write'
         self.room_id = None  # server room id
         self.group = None   # server group id
         self.thread_pool = 2
@@ -104,8 +105,6 @@ class PerMon(object):
                                               self.influx_password, self.influx_database)  # influxdb connection
         self.redis_client = redis.Redis(host=self.redis_host, port=self.redis_port, password=self.redis_password,
                                         db=self.redis_db, decode_responses=True)
-        self.redis_key = f'{self.group}_{self.room_id}'
-        self.redis_num_key = self.redis_key + '_host_'
         self.monitor()
 
     @property
@@ -117,33 +116,16 @@ class PerMon(object):
         self.is_system = value
 
     def get_config_from_server(self):
-        url = f'http://{cfg.getLogging("address")}/monitor/server/register/first'
-        header = {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Encoding": "gzip, deflate",
-            "Content-Type": "application/json; charset=UTF-8"}
+        url = f'http://{cfg.getLogging("address")}/register'
         post_data = {
+            'type': 'monitor-agent',
             'host': self.IP,
-            'port': cfg.getServer('port'),
-            'system': self.system_version,
-            'cpu': self.cpu_cores,
-            'cpu_usage': self.cpu_usage,
-            'nic': self.nic,
-            'network_speed': self.network_speed,
-            'mem': round(self.total_mem, 2),
-            'mem_usage': self.mem_usage,
-            'disk_size': self.total_disk_h,
-            'disk_usage': self.get_used_disk_rate(),
-            'disks': ','.join(self.all_disk),
-            'net_usage': self.net_usage,
-            'io_usage': self.io_usage,
-            'gc': self.gc_info,
-            'ffgc': self.ffgc
+            'port': cfg.getServer('port')
         }
 
         while True:
             try:
-                res = requests.post(url=url, json=post_data, headers=header)
+                res = http_post(url, post_data)
                 logger.info(f"The result of registration is {res.content.decode('unicode_escape')}")
                 if res.status_code == 200:
                     response_data = json.loads(res.content.decode('unicode_escape'))
@@ -166,7 +148,7 @@ class PerMon(object):
 
                 time.sleep(1)
 
-            except(Exception):
+            except:
                 logger.error(traceback.format_exc())
                 time.sleep(1)
 
@@ -192,32 +174,6 @@ class PerMon(object):
         self.monitor_task.put((self.register_agent, True))
         # Put the tasks of the monitoring system into the queue
         self.monitor_task.put((self.write_system_cpu_mem, 1))
-
-    def write_to_redis(self, data):
-        total_num = len(self.redis_client.keys(self.redis_num_key + '*'))
-        if self.redis_client.llen(self.redis_key) == total_num:
-            res = self.redis_client.lrange(self.redis_key, 0, total_num - 1)
-            self.redis_client.ltrim(self.redis_key, total_num + 1, total_num + 1)  # remove all
-            self.write_to_influx(res)
-        _ = self.redis_client.lpush(self.redis_key, str(data))
-        if self.redis_client.llen(self.redis_key) == total_num:
-            res = self.redis_client.lrange(self.redis_key, 0, total_num - 1)
-            self.redis_client.ltrim(self.redis_key, total_num + 1, total_num + 1)  # remove all
-            self.write_to_influx(res)
-        self.redis_client.expire(self.redis_key, 30)
-
-    def write_to_influx(self, data):
-        d = [json.loads(r) for r in data]
-        total_num = len(d)
-        data = [sum(r) / total_num for r in zip(*d)]
-        line = [{'measurement': self.group,
-                 'tags': {'host': 'all', 'room': self.room_id},
-                 'fields': {'c_time': time.strftime("%Y-%m-%d %H:%M:%S"),
-                     'cpu': data[0], 'iowait': data[1], 'usr_cpu': data[2], 'mem': data[3], 'mem_available': data[4],
-                     'jvm': data[5], 'disk': data[6], 'disk_r': data[7], 'disk_w': data[8], 'disk_d': data[9],
-                     'rec': data[10], 'trans': data[11], 'net': data[12], 'tcp': int(data[13]), 'retrans': int(data[14]),
-                     'port_tcp': int(data[15]), 'close_wait': int(data[16]), 'time_wait': int(data[17])}}]
-        self.influx_client.write_points(line)  # write to database
 
     def write_system_cpu_mem(self, is_system):
         """
@@ -248,7 +204,6 @@ class PerMon(object):
                      'close_wait': 0,
                      'time_wait': 0
                  }}]
-        self.redis_client.set(self.redis_num_key + self.IP, 1, ex=10)
         while True:
             if self.is_system:
                 try:
@@ -274,15 +229,8 @@ class PerMon(object):
                         line[0]['fields']['close_wait'] = res['close_wait']
                         line[0]['fields']['time_wait'] = res['time_wait']
                         line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
-                        self.influx_client.write_points(line)    # write to database
-                        logger.info(f"system:{res}")
 
-                        res_list = [res['cpu'], res['iowait'], res['usr_cpu'], res['mem'], res['mem_available'], res['jvm'],
-                                    res['disk'], res['disk_r'], res['disk_w'], res['disk_d'], res['rec'], res['trans'],
-                                    res['network'], res['tcp'], res['retrans'], res['port_tcp'], res['close_wait'], res['time_wait']]
-                        self.write_to_redis(res_list)
-
-                        thread = threading.Thread(target=self.alert_msg, args=(res,))
+                        thread = threading.Thread(target=self.alert_msg, args=(res, line, ))
                         thread.start()
 
                 except:
@@ -293,7 +241,9 @@ class PerMon(object):
                 time.sleep(3)
 
     @handle_exception()
-    def alert_msg(self, res):
+    def alert_msg(self, res, line):
+        _ = http_post(self.influx_post_url, {'data': line})  # write to database
+        logger.info(f"system:{res}")
         if len(self.last_cpu_usage) > self.PeriodLength:
             self.last_cpu_usage.pop(0)
         if len(self.last_net_usage) > self.PeriodLength:
@@ -836,11 +786,7 @@ class PerMon(object):
         :param
         :return:
         """
-        url = f'http://{cfg.getLogging("address")}/monitor/server/register'
-        header = {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Encoding": "gzip, deflate",
-            "Content-Type": "application/json; charset=UTF-8"}
+        url = f'http://{cfg.getLogging("address")}/redis/write'
         post_data = {
             'host': self.IP,
             'port': cfg.getServer('port'),
@@ -872,9 +818,9 @@ class PerMon(object):
                     post_data['net_usage'] = self.net_usage
                     post_data['gc'] = self.gc_info
                     post_data['ffgc'] = self.ffgc
-                    res = requests.post(url=url, json=post_data, headers=header)
+                    data_list = ['Server_' + self.IP, json.dumps(post_data, ensure_ascii=False), 10]
+                    res = http_post(url, {'data': data_list})
                     logger.info('Agent registers successful ~')
-                    self.redis_client.set(self.redis_num_key + self.IP, 1, ex=10)
                     start_time = time.time()
 
                 if time.time() - disk_start_time > 300:
@@ -965,3 +911,17 @@ def notification(msg):
             logger.error(response['msg'])
     else:
         logger.error('Failed to send mail.')
+
+
+def http_post(url, post_data):
+    header = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Encoding": "gzip, deflate",
+        "Content-Type": "application/json; charset=UTF-8"}
+
+    try:
+        res = requests.post(url=url, json=post_data, headers=header)
+        logger.debug(f"The result of request is {res.content.decode('unicode_escape')}")
+        return res
+    except:
+        raise
