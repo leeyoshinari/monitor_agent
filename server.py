@@ -95,21 +95,10 @@ async def get_gc(request):
     return web.json_response({'code': 0, 'msg': 'Successful!', 'data': [ygc, ygct, fgc, fgct, fygc, ffgc]})
 
 
-async def stop_monitor(request):
-    pid = port_to_pid(cfg.getServer('port'))
-    if pid:
-        _ = os.popen(f'kill -9 {pid}')
-        logger.info('Stop the agent successfully!')
-        return web.Response(body='Stop the agent successfully!')
-    else:
-        return web.Response(body='Agent is not running!')
-
-
 async def main():
     app = web.Application()
 
     app.router.add_route('GET', '/', index)
-    app.router.add_route('GET', '/stop', stop_monitor)
     app.router.add_route('POST', '/runMonitor', run_monitor)
     app.router.add_route('GET', '/getGC/{port}', get_gc)
 
