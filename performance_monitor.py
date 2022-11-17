@@ -863,7 +863,7 @@ def notification(msg):
     :param msg: Email body
     :return:
     """
-    url = f'http://{cfg.getLogging("address")}/monitor/register/notification'
+    url = f'http://{cfg.getLogging("address")}/setMessage'
 
     header = {
         "Accept": "application/json, text/plain, */*",
