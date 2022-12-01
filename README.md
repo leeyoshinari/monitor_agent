@@ -1,5 +1,6 @@
 # monitor_agent
-It can only be used with [MyPlatform](https://github.com/leeyoshinari/MyPlatform.git), and can't be used alone. <br>
+It can be only used with [MyPlatform](https://github.com/leeyoshinari/MyPlatform.git), and can't be used alone. <br>
+
 This Repository is modified based on the [Source Repository](https://github.com/leeyoshinari/performance_monitor). If you want to know more information, [please access it](https://github.com/leeyoshinari/performance_monitor).
 
 ## Deploy
@@ -28,5 +29,3 @@ NOTE: For Linux Server, the executable file packaged on the server of the CentOS
 2. The network card of server must be in full duplex mode, if not, the network usage will be incorrect.
 
 3. The version of sysstat must be 12+, the version of `12.4.0` has been tested, other versions have not been tested, and using old version may cause data abnormalities; please [click me](http://sebastien.godard.pagesperso-orange.fr/download.html) to download it.
-
-4. The code can be run on almost any linux system that can run python. The tested systems have `CentOS`, `Ubuntu`, `KylinOS`, `NeoKylin`, support `X86_64` and `ARM` architecture.
