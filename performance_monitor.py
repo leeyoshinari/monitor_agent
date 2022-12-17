@@ -8,7 +8,6 @@ import time
 import json
 import queue
 import traceback
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -23,7 +22,7 @@ class PerMon(object):
         self.influx_post_url = f'http://{cfg.getLogging("address")}/influx/write'
         self.room_id = None  # server room id
         self.group = None   # server group id
-        self.thread_pool = 2
+        self.thread_pool = 4
         self.is_system = 1        # Whether to monitor the server system
         self.error_times = cfg.getMonitor('errorTimes')
         self.maxCPU = cfg.getMonitor('maxCPU')
@@ -208,8 +207,7 @@ class PerMon(object):
                         line[0]['fields']['time_wait'] = res['time_wait']
                         line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
 
-                        thread = threading.Thread(target=self.alert_msg, args=(res, line, ))
-                        thread.start()
+                        self.monitor_task.put((self.alert_msg, (res, line)))
                     del res
 
                 except:
@@ -220,10 +218,10 @@ class PerMon(object):
                 time.sleep(3)
 
     @handle_exception()
-    def alert_msg(self, res, line):
+    def alert_msg(self, data):
         msg = ''
-        _ = http_post(self.influx_post_url, {'data': line})  # write to database
-        logger.info(f"system:{res}")
+        _ = http_post(self.influx_post_url, {'data': data[1]})  # write to database
+        logger.info(f"system:{data[0]}")
         if len(self.last_cpu_usage) > self.PeriodLength:
             self.last_cpu_usage.pop(0)
         if len(self.last_net_usage) > self.PeriodLength:
@@ -231,11 +229,11 @@ class PerMon(object):
         if len(self.last_io_usage) > self.PeriodLength:
             self.last_io_usage.pop(0)
 
-        self.last_cpu_usage.append(res['cpu'])
-        self.last_net_usage.append(res['network'])
-        self.last_io_usage.append(res['disk'])
+        self.last_cpu_usage.append(data[0]['cpu'])
+        self.last_net_usage.append(data[0]['network'])
+        self.last_io_usage.append(data[0]['disk'])
         self.cpu_usage = sum(self.last_cpu_usage) / self.PeriodLength  # CPU usage, with %
-        self.mem_usage = 1 - res['mem_available'] / self.total_mem  # Memory usage, without %
+        self.mem_usage = 1 - data[0]['mem_available'] / self.total_mem  # Memory usage, without %
         self.io_usage = sum(self.last_io_usage) / self.PeriodLength
         self.net_usage = sum(self.last_net_usage) / self.PeriodLength
 
@@ -244,23 +242,20 @@ class PerMon(object):
             logger.warning(msg)
             if self.isCPUAlert and self.cpu_flag:
                 self.cpu_flag = False  # Set to False to prevent sending email continuously
-                thread = threading.Thread(target=notification, args=(msg,))
-                thread.start()
+                self.monitor_task.put((notification, msg))
         else:
             self.cpu_flag = True  # If CPU usage is normally, reset it to True
 
-        if res['mem_available'] <= self.minMem:
-            msg = f"{self.IP} system free memory is {res['mem_available']}G, it is too low."
+        if data[0]['mem_available'] <= self.minMem:
+            msg = f"{self.IP} system free memory is {data[0]['mem_available']}G, it is too low."
             logger.warning(msg)
             if self.isMemAlert and self.mem_flag:
                 self.mem_flag = False  # Set to False to prevent sending email continuously
-                thread = threading.Thread(target=notification, args=(msg,))
-                thread.start()
+                self.monitor_task.put((notification, msg))
 
             if self.echo and self.echo:
                 self.echo = False  # Set to False to prevent cleaning up cache continuously
-                thread = threading.Thread(target=self.clear_cache, args=())
-                thread.start()
+                self.monitor_task.put((self.clear_cache, self.echo))
 
         else:
             self.mem_flag = True  # If free memory is normally, reset it to True.
@@ -271,8 +266,7 @@ class PerMon(object):
             logger.warning(msg)
             if self.isCPUAlert and self.io_flag:
                 self.io_flag = False  # Set to False to prevent sending email continuously
-                thread = threading.Thread(target=notification, args=(msg,))
-                thread.start()
+                self.monitor_task.put((notification, msg))
         else:
             self.io_flag = True  # If IO is normally, reset it to True
 
@@ -281,11 +275,11 @@ class PerMon(object):
             logger.warning(msg)
             if self.isNetworkAlert and self.net_flag:
                 self.net_flag = False  # Set to False to prevent sending email continuously
-                thread = threading.Thread(target=notification, args=(msg,))
-                thread.start()
+                self.monitor_task.put((notification, msg))
         else:
             self.net_flag = True  # If network usage is normally, reset it to True
-        del msg
+        del msg, data
+        gc.collect()
 
     @handle_exception(is_return=True, default_value=0.0)
     def get_jvm(self, port, pid):
@@ -314,8 +308,7 @@ class PerMon(object):
                     msg = f'The Full GC frequency of port {port} is {frequency}, it is too high. Server IP: {self.IP}'
                     logger.warning(msg)
                     if self.isJvmAlert:
-                        thread = threading.Thread(target=notification, args=(msg, ))
-                        thread.start()
+                        self.monitor_task.put((notification, msg))
                 self.gc_info = [int(res[12]), float(res[13]), fgc, float(res[15])]
                 self.ffgc = frequency
 
@@ -838,8 +831,7 @@ class PerMon(object):
                             logger.warning(msg)
                             if self.isDiskAlert and disk_flag:
                                 disk_flag = False  # Set to False to prevent cleaning up cache continuously
-                                thread = threading.Thread(target=notification, args=(msg,))
-                                thread.start()
+                                self.monitor_task.put((notification, msg))
                             del msg
                         else:
                             disk_flag = True
@@ -856,13 +848,13 @@ class PerMon(object):
                 logger.error(traceback.format_exc())
                 time.sleep(3)
 
-    def clear_cache(self):
+    def clear_cache(self, cache_type):
         """
          Cleaning up cache.
         :return:
         """
-        logger.info(f'Start Cleaning up cache: echo {self.echo} > /proc/sys/vm/drop_caches')
-        os.popen(f'echo {self.echo} > /proc/sys/vm/drop_caches')
+        logger.info(f'Start Cleaning up cache: echo {cache_type} > /proc/sys/vm/drop_caches')
+        os.popen(f'echo {cache_type} > /proc/sys/vm/drop_caches')
         logger.info('Clear the cache successfully.')
 
     def __del__(self):
