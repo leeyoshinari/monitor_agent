@@ -217,69 +217,72 @@ class PerMon(object):
             else:
                 time.sleep(3)
 
-    @handle_exception()
     def alert_msg(self, data):
         msg = ''
-        _ = http_post(self.influx_post_url, {'data': data[1]})  # write to database
-        logger.info(f"system:{data[0]}")
-        if len(self.last_cpu_usage) > self.PeriodLength:
-            self.last_cpu_usage.pop(0)
-        if len(self.last_net_usage) > self.PeriodLength:
-            self.last_net_usage.pop(0)
-        if len(self.last_io_usage) > self.PeriodLength:
-            self.last_io_usage.pop(0)
+        try:
+            _ = http_post(self.influx_post_url, {'data': data[1]})  # write to database
+            logger.info(f"system:{data[0]}")
+            if len(self.last_cpu_usage) > self.PeriodLength:
+                self.last_cpu_usage.pop(0)
+            if len(self.last_net_usage) > self.PeriodLength:
+                self.last_net_usage.pop(0)
+            if len(self.last_io_usage) > self.PeriodLength:
+                self.last_io_usage.pop(0)
 
-        self.last_cpu_usage.append(data[0]['cpu'])
-        self.last_net_usage.append(data[0]['network'])
-        self.last_io_usage.append(data[0]['disk'])
-        self.cpu_usage = sum(self.last_cpu_usage) / self.PeriodLength  # CPU usage, with %
-        self.mem_usage = 1 - data[0]['mem_available'] / self.total_mem  # Memory usage, without %
-        self.io_usage = sum(self.last_io_usage) / self.PeriodLength
-        self.net_usage = sum(self.last_net_usage) / self.PeriodLength
+            self.last_cpu_usage.append(data[0]['cpu'])
+            self.last_net_usage.append(data[0]['network'])
+            self.last_io_usage.append(data[0]['disk'])
+            self.cpu_usage = sum(self.last_cpu_usage) / self.PeriodLength  # CPU usage, with %
+            self.mem_usage = 1 - data[0]['mem_available'] / self.total_mem  # Memory usage, without %
+            self.io_usage = sum(self.last_io_usage) / self.PeriodLength
+            self.net_usage = sum(self.last_net_usage) / self.PeriodLength
 
-        if self.cpu_usage > self.maxCPU:
-            msg = f'{self.IP} server CPU average usage is {self.cpu_usage}%, it is too high.'
-            logger.warning(msg)
-            if self.isCPUAlert and self.cpu_flag:
-                self.cpu_flag = False  # Set to False to prevent sending email continuously
-                self.monitor_task.put((notification, msg))
-        else:
-            self.cpu_flag = True  # If CPU usage is normally, reset it to True
+            if self.cpu_usage > self.maxCPU:
+                msg = f'{self.IP} server CPU average usage is {self.cpu_usage}%, it is too high.'
+                logger.warning(msg)
+                if self.isCPUAlert and self.cpu_flag:
+                    self.cpu_flag = False  # Set to False to prevent sending email continuously
+                    self.monitor_task.put((notification, msg))
+            else:
+                self.cpu_flag = True  # If CPU usage is normally, reset it to True
 
-        if data[0]['mem_available'] <= self.minMem:
-            msg = f"{self.IP} system free memory is {data[0]['mem_available']}G, it is too low."
-            logger.warning(msg)
-            if self.isMemAlert and self.mem_flag:
-                self.mem_flag = False  # Set to False to prevent sending email continuously
-                self.monitor_task.put((notification, msg))
+            if data[0]['mem_available'] <= self.minMem:
+                msg = f"{self.IP} system free memory is {data[0]['mem_available']}G, it is too low."
+                logger.warning(msg)
+                if self.isMemAlert and self.mem_flag:
+                    self.mem_flag = False  # Set to False to prevent sending email continuously
+                    self.monitor_task.put((notification, msg))
 
-            if self.echo and self.echo:
-                self.echo = False  # Set to False to prevent cleaning up cache continuously
-                self.monitor_task.put((self.clear_cache, self.echo))
+                if self.echo and self.echo:
+                    self.echo = False  # Set to False to prevent cleaning up cache continuously
+                    self.monitor_task.put((self.clear_cache, self.echo))
 
-        else:
-            self.mem_flag = True  # If free memory is normally, reset it to True.
-            self.echo = True
+            else:
+                self.mem_flag = True  # If free memory is normally, reset it to True.
+                self.echo = True
 
-        if self.io_usage > self.maxIO:
-            msg = f'{self.IP} server disk IO is {self.io_usage}%, it is too high.'
-            logger.warning(msg)
-            if self.isCPUAlert and self.io_flag:
-                self.io_flag = False  # Set to False to prevent sending email continuously
-                self.monitor_task.put((notification, msg))
-        else:
-            self.io_flag = True  # If IO is normally, reset it to True
+            if self.io_usage > self.maxIO:
+                msg = f'{self.IP} server disk IO is {self.io_usage}%, it is too high.'
+                logger.warning(msg)
+                if self.isCPUAlert and self.io_flag:
+                    self.io_flag = False  # Set to False to prevent sending email continuously
+                    self.monitor_task.put((notification, msg))
+            else:
+                self.io_flag = True  # If IO is normally, reset it to True
 
-        if self.net_usage > self.maxNetwork:
-            msg = f'{self.IP} server network usage is {self.net_usage}%, it is too high.'
-            logger.warning(msg)
-            if self.isNetworkAlert and self.net_flag:
-                self.net_flag = False  # Set to False to prevent sending email continuously
-                self.monitor_task.put((notification, msg))
-        else:
-            self.net_flag = True  # If network usage is normally, reset it to True
-        del msg, data
-        gc.collect()
+            if self.net_usage > self.maxNetwork:
+                msg = f'{self.IP} server network usage is {self.net_usage}%, it is too high.'
+                logger.warning(msg)
+                if self.isNetworkAlert and self.net_flag:
+                    self.net_flag = False  # Set to False to prevent sending email continuously
+                    self.monitor_task.put((notification, msg))
+            else:
+                self.net_flag = True  # If network usage is normally, reset it to True
+        except:
+            logger.error(traceback.format_exc())
+        finally:
+            del msg, data
+            gc.collect()
 
     @handle_exception(is_return=True, default_value=0.0)
     def get_jvm(self, port, pid):
