@@ -210,12 +210,12 @@ class PerMon(object):
 
                         self.monitor_task.put((self.alert_msg, (res, line)))
                     del res
-                    logger.error("*" * 60)
-                    obj_list = []
-                    for obj in gc.get_objects():
-                        obj_list.append((obj, sys.getsizeof(obj)))
-                    for obj, size in sorted(obj_list, key=lambda x: x[1], reverse=True)[:10]:
-                        logger.error(f"OBJ: {id(obj)}, TYPE: {type(obj)}, SIZE: {size/1024/1024:.2f}MB, {str(obj)}")
+                    # logger.error("*" * 60)
+                    # obj_list = []
+                    # for obj in gc.get_objects():
+                    #     obj_list.append((obj, sys.getsizeof(obj)))
+                    # for obj, size in sorted(obj_list, key=lambda x: x[1], reverse=True)[:10]:
+                    #     logger.error(f"OBJ: {id(obj)}, TYPE: {type(obj)}, SIZE: {size/1024/1024:.2f}MB, {str(obj)}")
 
                 except:
                     logger.error(traceback.format_exc())
@@ -865,9 +865,6 @@ class PerMon(object):
         logger.info(f'Start Cleaning up cache: echo {cache_type} > /proc/sys/vm/drop_caches')
         os.popen(f'echo {cache_type} > /proc/sys/vm/drop_caches')
         logger.info('Clear the cache successfully.')
-
-    def __del__(self):
-        pass
 
 
 @handle_exception(is_return=True)
