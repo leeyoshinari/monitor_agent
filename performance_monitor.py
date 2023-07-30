@@ -292,6 +292,7 @@ class PerMon(object):
             result = os.popen(f'jstat -gc {pid}').readlines()[1]
         except IndexError:
             self.java_info['status'] = 0
+            self.java_info['port_status'] = 0
             return 0.0
         res = result.strip().split()
         logger.debug(f'The JVM of pid {pid} is: {res}')
@@ -389,12 +390,11 @@ class PerMon(object):
             disk = sum(disk_list)
 
         mem, mem_available = self.get_free_memory()
-        if self.java_info['port_status'] == 1:
+        if self.java_info['status'] == 1 and self.java_info['port_status'] == 1:
             tcp_num = self.get_port_tcp(self.java_info['port'], self.java_info['pid'])
             port_tcp = tcp_num.get('tcp', 0)
             close_wait = tcp_num.get('close_wait', 0)
             time_wait = tcp_num.get('time_wait', 0)
-        if self.java_info['status'] == 1:
             jvm = self.get_jvm(self.java_info['port'], self.java_info['pid'])  # get JVM size
 
         if bps1 and bps2:
@@ -457,16 +457,16 @@ class PerMon(object):
         """
         tcp_num = {}
         try:
-            res = os.popen(f'netstat -ant |grep {port}').read()
+            res = os.popen(f'ss -ant |grep {port}').read()
             if res.count('LISTEN') == 0 and res.count(pid) == 0:
                 self.java_info['port_status'] = 0
                 self.java_info['status'] = 0
                 self.gc_info = [-1, -1, -1, -1]
                 return tcp_num
-            tcp_num.update({'tcp': res.count('tcp')})
-            tcp_num.update({'established': res.count('ESTABLISHED')})
-            tcp_num.update({'close_wait': res.count('CLOSE_WAIT')})
-            tcp_num.update({'time_wait': res.count('TIME_WAIT')})
+            tcp_num.update({'tcp': res.count(f':{port}')})
+            tcp_num.update({'established': res.count('ESTAB')})
+            tcp_num.update({'close_wait': res.count('CLOSE-WAIT')})
+            tcp_num.update({'time_wait': res.count('TIME-WAIT')})
         except Exception as err:
             logger.info(err)
         return tcp_num
@@ -686,25 +686,26 @@ class PerMon(object):
         Find java service
         """
         try:
-            pid = os.popen("ps -ef|grep java |grep " + self.group + " |grep -v grep |awk '{print $1}'").readlines()[0]
-            if pid.strip():
-                self.java_info['pid'] = pid.strip()
-                port = os.popen("netstat -antp|grep " + self.java_info['pid'] + " |grep LISTEN |tr -s ' ' |awk '{print $4}' | awk -F ':' '{print $2}'").readlines()[0]
-                self.java_info['port'] = port.strip()
-                self.java_info['port_status'] = 1
-                try:
-                    result = os.popen(f'jstat -gc {self.java_info["pid"]} |tr -s " "').readlines()[1]
-                    res = result.strip().split(' ')
-                    logger.info(f'The JVM of {pid} is {res}')
-                    _ = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])
-                    self.java_info['status'] = 1
-                except Exception as err:
-                    logger.warning(err)
+            if self.java_info['status'] == 0 and self.java_info['port_status'] == 0:
+                pid = os.popen("ps -ef|grep java |grep " + self.group + " |grep -v grep |awk '{print $1}'").readlines()[0]
+                if pid.strip():
+                    self.java_info['pid'] = pid.strip()
+                    port = os.popen("ss -antpl|grep " + self.java_info['pid'] + " |tr -s ' ' |awk '{print $4}' | awk -F ':' '{print $2}'").readlines()[0]
+                    self.java_info['port'] = port.strip()
+                    try:
+                        result = os.popen(f'jstat -gc {self.java_info["pid"]} |tr -s " "').readlines()[1]
+                        res = result.strip().split(' ')
+                        logger.info(f'The JVM of {pid} is {res}')
+                        _ = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])
+                        self.java_info['status'] = 1
+                        self.java_info['port_status'] = 1
+                    except Exception as err:
+                        logger.warning(err)
+                        self.java_info['status'] = 0
+                        self.java_info['port_status'] = 0
+                else:
                     self.java_info['status'] = 0
-            else:
-                self.java_info['status'] = 0
-                self.java_info['port_status'] = 0
-
+                    self.java_info['port_status'] = 0
         except Exception as err:
             logger.warning(err)
             self.java_info['status'] = 0
@@ -822,12 +823,12 @@ def port_to_pid(port):
     :return: pid
     """
     pid = None
-    result = os.popen(f'netstat -nlp|grep :{port}').readlines()
+    result = os.popen(f'ss -nlp|grep :{port}').readlines()
     logger.debug(f'The result of the port {port} is {result}')
-    p = result[0].split()
-    pp = p[3].split(':')[-1]
+    p = result[0].strip().split()
+    pp = p[4].split(':')[-1]
     if str(port) == pp:
-        pid = p[p.index('LISTEN') + 1].split('/')[0]
+        pid = p[-1].split('pid=')[-1].split(',')[0]
         logger.info(f'The pid of the port {port} is {pid}.')
 
     del result, p, pp
