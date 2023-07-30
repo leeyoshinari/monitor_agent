@@ -211,8 +211,11 @@ class PerMon(object):
                 line[0]['fields']['time_wait'] = res['time_wait']
                 line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
                 self.monitor_task.put((self.alert_msg, (res, line)))
+                del res
         except:
             logger.error(traceback.format_exc())
+        finally:
+            del line
 
     def alert_msg(self, data):
         try:
@@ -777,8 +780,11 @@ class PerMon(object):
             data_list = ['Server_' + self.IP, json.dumps(post_data, ensure_ascii=False), 12]
             _ = http_post(url, {'data': data_list})
             logger.info('Agent registers successful ~')
+            del data_list
         except:
             logger.error(traceback.format_exc())
+        finally:
+            del url, post_data
 
     def get_current_usage_rate(self):
         """
@@ -794,6 +800,7 @@ class PerMon(object):
                     logger.warning(msg)
                     if self.isDiskAlert:
                         self.monitor_task.put((notification, msg))
+                    del msg
         except:
             logger.error(traceback.format_exc())
 
