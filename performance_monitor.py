@@ -786,17 +786,16 @@ class PerMon(object):
         :param
         :return:
         """
-        while True:
-            try:
-                self.current_disk_rate = self.get_used_disk_rate()
-                if self.current_disk_rate:
-                    if self.maxDiskUsage < self.current_disk_rate:
-                        msg = f"The disk space usage is {self.current_disk_rate * 100:.2f}%, it is too high. Server IP is {self.IP}"
-                        logger.warning(msg)
-                        if self.isDiskAlert:
-                            self.monitor_task.put((notification, msg))
-            except:
-                logger.error(traceback.format_exc())
+        try:
+            self.current_disk_rate = self.get_used_disk_rate()
+            if self.current_disk_rate:
+                if self.maxDiskUsage < self.current_disk_rate:
+                    msg = f"The disk space usage is {self.current_disk_rate * 100:.2f}%, it is too high. Server IP is {self.IP}"
+                    logger.warning(msg)
+                    if self.isDiskAlert:
+                        self.monitor_task.put((notification, msg))
+        except:
+            logger.error(traceback.format_exc())
 
     def clear_cache(self, cache_type):
         """
