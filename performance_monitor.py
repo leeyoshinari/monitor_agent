@@ -58,7 +58,7 @@ class PerMon(object):
         self.all_disk = []      # disk number
         self.total_disk = 1     # total disk size, unit: M
         self.total_disk_h = 0     # total disk size, unit:T or G
-        self.current_disk_rate = 0  # current disk usage rate
+        self.current_disk_rate = self.get_used_disk_rate()  # current disk usage rate
         self.network_speed = cfg.getServer('nicSpeed')  # bandwidth
         self.Retrans_num = self.get_RetransSegs()   # TCP retrans number
         self.java_info = {'status': 0, 'pid': '', 'port': '', 'port_status': 0}
@@ -762,7 +762,7 @@ class PerMon(object):
             'mem_usage': self.mem_usage,
             'io_usage': self.io_usage,
             'disk_size': self.total_disk_h,
-            'disk_usage': self.get_used_disk_rate(),
+            'disk_usage': self.current_disk_rate,
             'disks': ','.join(self.all_disk),
             'gc': self.gc_info,
             'ffgc': self.ffgc
