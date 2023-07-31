@@ -90,6 +90,29 @@ class PerMon(object):
         self.echo = True        # Flag of whether to clean up cache
         self.io_flag = True     # Flag of whether to send mail when the IO is too high
         self.net_flag = True    # Flag of whether to send mail when the Network usage is too high
+        self.line = [{'measurement': self.group,
+                 'tags': {'host': self.IP, 'room': self.room_id},
+                 'fields': {
+                     'c_time': '',
+                     'cpu': 0.0,
+                     'iowait': 0.0,
+                     'usr_cpu': 0.0,
+                     'mem': 0.0,
+                     'mem_available': 0.0,
+                     'jvm': 0.0,
+                     'disk': 0.0,
+                     'disk_r': 0.0,
+                     'disk_w': 0.0,
+                     'disk_d': 0.0,
+                     'rec': 0.0,
+                     'trans': 0.0,
+                     'net': 0.0,
+                     'tcp': 0,
+                     'retrans': 0,
+                     'port_tcp': 0,
+                     'close_wait': 0,
+                     'time_wait': 0
+                 }}]
 
         self.monitor()
         self.scheduler.add_job(self.get_current_usage_rate, trigger='interval', args=(), seconds=300, id='get_current_usage_rate')
@@ -128,7 +151,6 @@ class PerMon(object):
                     else:
                         logger.error(response_data['msg'])
                         raise Exception(response_data['msg'])
-
                 del res
                 time.sleep(1)
 
@@ -165,62 +187,38 @@ class PerMon(object):
         :param is_system:
         :return:
         """
-        line = [{'measurement': self.group,
-                 'tags': {'host': self.IP, 'room': self.room_id},
-                 'fields': {
-                     'c_time': '',
-                     'cpu': 0.0,
-                     'iowait': 0.0,
-                     'usr_cpu': 0.0,
-                     'mem': 0.0,
-                     'mem_available': 0.0,
-                     'jvm': 0.0,
-                     'disk': 0.0,
-                     'disk_r': 0.0,
-                     'disk_w': 0.0,
-                     'disk_d': 0.0,
-                     'rec': 0.0,
-                     'trans': 0.0,
-                     'net': 0.0,
-                     'tcp': 0,
-                     'retrans': 0,
-                     'port_tcp': 0,
-                     'close_wait': 0,
-                     'time_wait': 0
-                 }}]
         try:
             res = self.get_system_cpu_io_speed()   # get CPU, memory, IO, network, TCP
             if res['disk'] is not None and res['cpu'] is not None and res['network'] is not None:
-                line[0]['fields']['cpu'] = res['cpu']
-                line[0]['fields']['iowait'] = res['iowait']
-                line[0]['fields']['usr_cpu'] = res['usr_cpu']
-                line[0]['fields']['mem'] = res['mem']
-                line[0]['fields']['mem_available'] = res['mem_available']
-                line[0]['fields']['jvm'] = res['jvm']
-                line[0]['fields']['disk'] = res['disk']
-                line[0]['fields']['disk_r'] = res['disk_r']
-                line[0]['fields']['disk_w'] = res['disk_w']
-                line[0]['fields']['disk_d'] = res['disk_d']
-                line[0]['fields']['rec'] = res['rec']
-                line[0]['fields']['trans'] = res['trans']
-                line[0]['fields']['net'] = res['network']
-                line[0]['fields']['tcp'] = res['tcp']
-                line[0]['fields']['retrans'] = res['retrans']
-                line[0]['fields']['port_tcp'] = res['port_tcp']
-                line[0]['fields']['close_wait'] = res['close_wait']
-                line[0]['fields']['time_wait'] = res['time_wait']
-                line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
-                self.monitor_task.put((self.alert_msg, (res, line)))
+                self.line[0]['fields']['cpu'] = res['cpu']
+                self.line[0]['fields']['iowait'] = res['iowait']
+                self.line[0]['fields']['usr_cpu'] = res['usr_cpu']
+                self.line[0]['fields']['mem'] = res['mem']
+                self.line[0]['fields']['mem_available'] = res['mem_available']
+                self.line[0]['fields']['jvm'] = res['jvm']
+                self.line[0]['fields']['disk'] = res['disk']
+                self.line[0]['fields']['disk_r'] = res['disk_r']
+                self.line[0]['fields']['disk_w'] = res['disk_w']
+                self.line[0]['fields']['disk_d'] = res['disk_d']
+                self.line[0]['fields']['rec'] = res['rec']
+                self.line[0]['fields']['trans'] = res['trans']
+                self.line[0]['fields']['net'] = res['network']
+                self.line[0]['fields']['tcp'] = res['tcp']
+                self.line[0]['fields']['retrans'] = res['retrans']
+                self.line[0]['fields']['port_tcp'] = res['port_tcp']
+                self.line[0]['fields']['close_wait'] = res['close_wait']
+                self.line[0]['fields']['time_wait'] = res['time_wait']
+                self.line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
+                # self.monitor_task.put((self.alert_msg, ()))
+                self.alert_msg()
                 del res
         except:
             logger.error(traceback.format_exc())
-        finally:
-            del line
 
-    def alert_msg(self, data):
+    def alert_msg(self):
         try:
-            _ = http_post(self.influx_post_url, {'data': data[1]})  # write to database
-            logger.info(f"system:{data[0]}")
+            _ = http_post(self.influx_post_url, {'data': self.line})  # write to database
+            logger.info(f"system:{self.line}")
             if len(self.last_cpu_usage) > self.PeriodLength:
                 self.last_cpu_usage.pop(0)
             if len(self.last_net_usage) > self.PeriodLength:
@@ -228,11 +226,11 @@ class PerMon(object):
             if len(self.last_io_usage) > self.PeriodLength:
                 self.last_io_usage.pop(0)
 
-            self.last_cpu_usage.append(data[0]['cpu'])
-            self.last_net_usage.append(data[0]['network'])
-            self.last_io_usage.append(data[0]['disk'])
+            self.last_cpu_usage.append(self.line[0]['fields']['cpu'])
+            self.last_net_usage.append(self.line[0]['fields']['net'])
+            self.last_io_usage.append(self.line[0]['fields']['disk'])
             self.cpu_usage = sum(self.last_cpu_usage) / self.PeriodLength  # CPU usage, with %
-            self.mem_usage = 1 - data[0]['mem_available'] / self.total_mem  # Memory usage, without %
+            self.mem_usage = 1 - self.line[0]['fields']['mem_available'] / self.total_mem  # Memory usage, without %
             self.io_usage = sum(self.last_io_usage) / self.PeriodLength
             self.net_usage = sum(self.last_net_usage) / self.PeriodLength
 
@@ -245,8 +243,8 @@ class PerMon(object):
             else:
                 self.cpu_flag = True  # If CPU usage is normally, reset it to True
 
-            if data[0]['mem_available'] <= self.minMem:
-                msg = f"{self.IP} system free memory is {data[0]['mem_available']}G, it is too low."
+            if self.line[0]['fields']['mem_available'] <= self.minMem:
+                msg = f"{self.IP} system free memory is {self.line[0]['fields']['mem_available']}G, it is too low."
                 logger.warning(msg)
                 if self.isMemAlert and self.mem_flag:
                     self.mem_flag = False  # Set to False to prevent sending email continuously
@@ -321,6 +319,7 @@ class PerMon(object):
         if self.FGC[str(port)] == 0:    # If the times of FGC is 0, reset FGC time.
             self.FGC_time[str(port)] = []
 
+        del res
         return mem / 1048576    # 1048576 = 1024 * 1024
 
     @handle_exception(is_return=True, default_value={})
@@ -388,6 +387,7 @@ class PerMon(object):
         else:
             disk_list = [(x + y) / total_disk * z for x, y, z in zip(disk_r, disk_w, disk1)]
             disk = sum(disk_list)
+            del disk_list
 
         mem, mem_available = self.get_free_memory()
         if self.java_info['status'] == 1 and self.java_info['port_status'] == 1:
@@ -406,9 +406,11 @@ class PerMon(object):
             # Why multiply by 8, because 1MB/s = 8Mb/s.
             # Why divided by 2, because the network card is in full duplex mode.
             network = 400 * (rec + trans) / self.network_speed
+            del bps1, bps2
             logger.debug(f'The bandwidth of ethernet is: Receive {rec}MB/s, Transmit {trans}MB/s, Ratio {network}%')
 
         tcp, Retrans = self.get_tcp()
+        del result, disk_res, disk_r, disk_w, disk1
         return {'disk': disk, 'disk_r': total_disk_r, 'disk_w': total_disk_w, 'disk_d': 0.0, 'cpu': cpu, 'iowait': iowait,
                 'usr_cpu': usr_cpu, 'mem': mem, 'mem_available': mem_available, 'rec': rec, 'trans': trans,
                 'network': network, 'tcp': tcp, 'retrans': Retrans, 'port_tcp': port_tcp, 'close_wait': close_wait,
@@ -432,6 +434,7 @@ class PerMon(object):
                 continue
             if mem and mem_available:
                 break
+        del result
         return mem, mem_available
 
     @handle_exception(is_return=True, default_value=(0, 0))
@@ -446,6 +449,7 @@ class PerMon(object):
         tcp = int(tcps[9])      # TCP connections
         Retrans = int(tcps[-4]) - self.Retrans_num
         self.Retrans_num = int(tcps[-4])
+        del result, tcps
         return tcp, Retrans
 
     @handle_exception(is_return=True, default_value={})
@@ -467,6 +471,7 @@ class PerMon(object):
             tcp_num.update({'established': res.count('ESTAB')})
             tcp_num.update({'close_wait': res.count('CLOSE-WAIT')})
             tcp_num.update({'time_wait': res.count('TIME-WAIT')})
+            del res
         except Exception as err:
             logger.info(err)
         return tcp_num
@@ -541,6 +546,7 @@ class PerMon(object):
                         disk_line = disk_res[j].split()
                         self.all_disk.append(disk_line[0])
 
+            del result, disk_res
             logger.info(f'The system has {len(self.all_disk)} disks, disk number is {"、".join(self.all_disk)}')
         else:
             raise Exception('The system does not support the iostat, please install sysstat. ')
@@ -568,6 +574,7 @@ class PerMon(object):
                     logger.debug(f'The second data change is {data1}')
                     if data[1] != data1[1] or data[9] != data1[9]:     # If the data of network card changes, it means that the card is in use.
                         network_card.append(data[0].strip(':'))
+                del data, data1
 
         logger.debug(f'The data of network card is {network_card}')
         if 'lo' in network_card:    # 'lo' is 127.0.0.1, need to be deleted.
@@ -578,6 +585,7 @@ class PerMon(object):
             logger.info(f'The network card in use is {self.nic}')
         else:
             logger.error('The network card in use is not found.')
+        del result, result1, network_card
 
     @handle_exception(is_return=True)
     def get_total_disk_size(self):
@@ -592,6 +600,7 @@ class PerMon(object):
             if '/dev/' in res[0]:
                 size = float(res[1])
                 self.total_disk += size
+        del result, res
         logger.debug(f'The disks total size is {self.total_disk}M')
 
         self.total_disk_h = self.total_disk / 1024
@@ -616,8 +625,8 @@ class PerMon(object):
         for line in result:
             res = line.split()
             if '/dev/' in res[0]:
-                size = float(res[2])
-                used_disk_size += size
+                used_disk_size += float(res[2])
+        del result, res
         logger.info(f'The used size of disks is {used_disk_size}M')
         return used_disk_size / self.total_disk
 
@@ -645,6 +654,7 @@ class PerMon(object):
                         break
                     except IndexError:
                         logger.error(traceback.format_exc())
+            del result
             logger.info(f'The bandwidth of ethernet is {self.network_speed}Mb/s')
 
     @handle_exception(is_return=True)
@@ -667,6 +677,7 @@ class PerMon(object):
             else:
                 res = re.findall(r"gcc.*\((.*?)\)", result.strip())
                 self.system_version = res[0]
+        del result
         logger.info(f'system release/kernel version is {self.system_version}')
 
     @handle_exception(is_return=True, default_value=0)
@@ -679,6 +690,7 @@ class PerMon(object):
         tcps = result[-1].split()
         logger.debug(f'The TCP is: {tcps}')
         Retrans = int(tcps[-4])
+        del result, tcps
         return Retrans
 
     def get_java_info(self):
