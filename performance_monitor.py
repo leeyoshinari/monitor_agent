@@ -13,7 +13,8 @@ import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from common import handle_exception, get_ip
 from logger import logger, cfg
-
+from guppy import hpy
+from mem_top import mem_top
 
 class PerMon(object):
     def __init__(self):
@@ -119,6 +120,7 @@ class PerMon(object):
         self.scheduler.add_job(self.get_java_info, trigger='interval',args=(), seconds=60, id='get_java_info')
         self.scheduler.add_job(self.register_agent, trigger='interval', args=(), seconds=8, id='register_agent')
         self.scheduler.add_job(self.write_system_cpu_mem, trigger='interval', args=(), seconds=self.system_interval, id='write_system_cpu_mem')
+        self.scheduler.add_job(self.dump_mem, trigger='interval', args=(), hours=4, id='dump_mem')
         self.scheduler.start()
 
     @property
@@ -825,6 +827,14 @@ class PerMon(object):
         logger.info(f'Start Cleaning up cache: echo {cache_type} > /proc/sys/vm/drop_caches')
         os.popen(f'echo {cache_type} > /proc/sys/vm/drop_caches')
         logger.info('Clear the cache successfully.')
+
+    def dump_mem(self):
+        logger.info("-" * 99)
+        heap = hpy().heap()
+        logger.info(heap)
+        logger.info("-" * 99)
+        logger.info(mem_top())
+        logger.info("-" * 99)
 
 
 @handle_exception(is_return=True)
