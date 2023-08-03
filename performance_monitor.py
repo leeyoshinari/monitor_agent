@@ -15,7 +15,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from common import handle_exception, get_ip
 from logger import logger, cfg
 from guppy import hpy
-from mem_top import mem_top
+
 
 class PerMon(object):
     def __init__(self):
@@ -221,7 +221,7 @@ class PerMon(object):
     def alert_msg(self):
         try:
             _ = http_post(self.influx_post_url, {'data': self.line})  # write to database
-            logger.info(f"system:{self.line}")
+            logger.debug(f"system:{self.line}")
             if len(self.last_cpu_usage) > self.PeriodLength:
                 self.last_cpu_usage.pop(0)
             if len(self.last_net_usage) > self.PeriodLength:
@@ -831,15 +831,15 @@ class PerMon(object):
 
     def dump_mem(self):
         logger.info("*" * 99)
-        heap = hpy().heap()
-        logger.info(heap)
-        logger.info("*" * 99)
         obj_list = []
         for obj in gc.get_objects():
             obj_list.append((obj, sys.getsizeof(obj)))
         for obj, size in sorted(obj_list, key=lambda x: x[1], reverse=True)[:10]:
-            logger.info(f"OBJ: {id(obj)}, TYPE: {type(obj)}, SIZE: {size/1024/1024:.2f}MB {str(obj)[:100]}")
+            logger.info(f"OBJ: {id(obj)}, TYPE: {str(obj.__class__) if hasattr(obj, '__class__') else type(obj)}, SIZE: {size/1024/1024:.2f}MB {str(obj)[:500]}")
         logger.info("*" * 99)
+        # heap = hpy().heap()
+        # logger.info(heap)
+        # logger.info("*" * 99)
 
 
 @handle_exception(is_return=True)
