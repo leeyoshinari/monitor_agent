@@ -7,9 +7,30 @@ import time
 import asyncio
 import traceback
 from aiohttp import web
-from common import get_ip
 from logger import logger, cfg
 from performance_monitor import PerMon, port_to_pid
+
+
+def get_ip():
+    """
+    Get server's IP address
+    :return: IP address
+    """
+    ip = '127.0.0.1'
+    try:
+        if cfg.getServer('host'):
+            ip = cfg.getServer('host')
+        else:
+            result = os.popen("hostname -I |awk '{print $1}'").readlines()
+            if result:
+                ip = result[0].strip()
+                logger.info(f'The IP address is: {ip}')
+            else:
+                logger.warning('Server IP address not found!')
+    except:
+        logger.error(traceback.format_exc())
+    return ip
+
 
 permon = PerMon()
 HOST = get_ip()

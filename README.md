@@ -14,7 +14,7 @@ This Repository is modified based on the [Source Repository](https://github.com/
 3. Package. Using `pyinstaller` to package python code. 
 - (1) Enter folder, run:<br>
     ```shell
-    pyinstaller -F server.py -p performance_monitor.py -p logger.py -p config.py -p common.py -p __init__.py --hidden-import logger --hidden-import performance_monitor --hidden-import common --hidden-import config
+    pyinstaller -F server.py -p performance_monitor.py -p logger.py -p config.py -p __init__.py --hidden-import logger --hidden-import performance_monitor --hidden-import config
     ```
 - (2) Copy `config.conf` to the `dist` folder, cmd: `cp config.conf dist/`
 - (3) Enter `dist` folder, zip files, cmd: `zip monitor_agent.zip server config.conf`

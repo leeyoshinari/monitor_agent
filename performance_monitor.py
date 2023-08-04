@@ -12,11 +12,9 @@ import gc
 import sys
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-from common import handle_exception, get_ip
 from logger import logger, cfg
 import tracemalloc
 import linecache
-# from guppy import hpy
 
 
 class PerMon(object):
@@ -285,7 +283,6 @@ class PerMon(object):
         except:
             logger.error(traceback.format_exc())
 
-    @handle_exception(is_return=True, default_value=0.0)
     def get_jvm(self, port, pid):
         """
         JVM size
@@ -295,41 +292,41 @@ class PerMon(object):
         """
         try:
             result = os.popen(f'jstat -gc {pid}').readlines()[1]
-        except IndexError:
+            res = result.strip().split()
+            logger.debug(f'The JVM of pid {pid} is: {res}')
+            mem = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])     # calculate JVM
+
+            fgc = int(res[14])
+            if self.FGC[str(port)] < fgc:  # If the times of FGC increases
+                self.FGC[str(port)] = fgc
+                self.FGC_time[str(port)].append(time.time())
+                if len(self.FGC_time[str(port)]) > 2:   # Calculate FGC frequency
+                    frequency = self.FGC_time[str(port)][-1] - self.FGC_time[str(port)][-2]
+                    if frequency < self.frequencyFGC:    # If FGC frequency is too high, send email.
+                        msg = f'The Full GC frequency of port {port} is {frequency}, it is too high. Server IP: {self.IP}'
+                        logger.warning(msg)
+                        if self.isJvmAlert:
+                            self.monitor_task.put((notification, msg))
+                    self.gc_info = [int(res[12]), float(res[13]), fgc, float(res[15])]
+                    self.ffgc = frequency
+
+                # Write FGC times and time to log
+                logger.warning(f"The port {port} has Full GC {self.FGC[str(port)]} times.")
+
+            elif self.FGC[str(port)] > fgc:   # If the times of FGC is reduced, the port may be restarted, then reset it
+                self.FGC[str(port)] = 0
+
+            if self.FGC[str(port)] == 0:    # If the times of FGC is 0, reset FGC time.
+                self.FGC_time[str(port)] = []
+
+            del res
+            return mem / 1048576    # 1048576 = 1024 * 1024
+        except:
+            logger.error(traceback.format_exc())
             self.java_info['status'] = 0
             self.java_info['port_status'] = 0
             return 0.0
-        res = result.strip().split()
-        logger.debug(f'The JVM of pid {pid} is: {res}')
-        mem = float(res[2]) + float(res[3]) + float(res[5]) + float(res[7])     # calculate JVM
 
-        fgc = int(res[14])
-        if self.FGC[str(port)] < fgc:  # If the times of FGC increases
-            self.FGC[str(port)] = fgc
-            self.FGC_time[str(port)].append(time.time())
-            if len(self.FGC_time[str(port)]) > 2:   # Calculate FGC frequency
-                frequency = self.FGC_time[str(port)][-1] - self.FGC_time[str(port)][-2]
-                if frequency < self.frequencyFGC:    # If FGC frequency is too high, send email.
-                    msg = f'The Full GC frequency of port {port} is {frequency}, it is too high. Server IP: {self.IP}'
-                    logger.warning(msg)
-                    if self.isJvmAlert:
-                        self.monitor_task.put((notification, msg))
-                self.gc_info = [int(res[12]), float(res[13]), fgc, float(res[15])]
-                self.ffgc = frequency
-
-            # Write FGC times and time to log
-            logger.warning(f"The port {port} has Full GC {self.FGC[str(port)]} times.")
-
-        elif self.FGC[str(port)] > fgc:   # If the times of FGC is reduced, the port may be restarted, then reset it
-            self.FGC[str(port)] = 0
-
-        if self.FGC[str(port)] == 0:    # If the times of FGC is 0, reset FGC time.
-            self.FGC_time[str(port)] = []
-
-        del res
-        return mem / 1048576    # 1048576 = 1024 * 1024
-
-    @handle_exception(is_return=True, default_value={})
     def get_system_cpu_io_speed(self):
         """
         Get system CPU usage, memory, disk IO, network speed, etc.
@@ -352,76 +349,80 @@ class PerMon(object):
         disk_r = []
         disk_w = []
         # disk_d = []
-        if self.nic:
-            bps1 = os.popen(f'cat /proc/net/dev |grep {self.nic}').readlines()
-            logger.debug(f'The result of speed for the first time is: {bps1}')
+        try:
+            if self.nic:
+                bps1 = os.popen(f'cat /proc/net/dev |grep {self.nic}').readlines()
+                logger.debug(f'The result of speed for the first time is: {bps1}')
 
-        result = os.popen('iostat -x -m 1 2').readlines()
-        logger.debug(f'The result of Disks are: {result}')
+            result = os.popen('iostat -x -m 1 2').readlines()
+            logger.debug(f'The result of Disks are: {result}')
 
-        if self.nic:
-            bps2 = os.popen(f'cat /proc/net/dev |grep {self.nic}').readlines()
-            logger.debug(f'The result of speed for the second time is: {bps2}')
+            if self.nic:
+                bps2 = os.popen(f'cat /proc/net/dev |grep {self.nic}').readlines()
+                logger.debug(f'The result of speed for the second time is: {bps2}')
 
-        result = result[len(result) // 2 - 1:]
-        disk_res = [line.strip() for line in result if len(line) > 5]
+            result = result[len(result) // 2 - 1:]
+            disk_res = [line.strip() for line in result if len(line) > 5]
 
-        for i in range(len(disk_res)):
-            if 'avg-cpu' in disk_res[i]:
-                cpu_res = disk_res[i+1].strip().split()      # Free CPU
-                cpu = 100 - float(cpu_res[-1])      # CPU usage
-                iowait = float(cpu_res[-3])
-                usr_cpu = float(cpu_res[0])
-                logger.debug(f'System CPU usage rate is: {cpu}%')
-                continue
+            for i in range(len(disk_res)):
+                if 'avg-cpu' in disk_res[i]:
+                    cpu_res = disk_res[i+1].strip().split()      # Free CPU
+                    cpu = 100 - float(cpu_res[-1])      # CPU usage
+                    iowait = float(cpu_res[-3])
+                    usr_cpu = float(cpu_res[0])
+                    logger.debug(f'System CPU usage rate is: {cpu}%')
+                    continue
 
-            if 'Device' in disk_res[i]:
-                for j in range(i+1, len(disk_res)):
-                    disk_line = disk_res[j].split()
-                    disk1.append(float(disk_line[-1]))      # IO
-                    disk_r.append(float(disk_line[2]))     # Read MB/s
-                    disk_w.append(float(disk_line[8]))     # Write MB/s
-                    # disk_d.append(float(disk_line[14]))     # MB/s
-                logger.debug(f'The result of disks are: IO: {disk}, Read: {disk_r}, Write: {disk_w}')
-                break
+                if 'Device' in disk_res[i]:
+                    for j in range(i+1, len(disk_res)):
+                        disk_line = disk_res[j].split()
+                        disk1.append(float(disk_line[-1]))      # IO
+                        disk_r.append(float(disk_line[2]))     # Read MB/s
+                        disk_w.append(float(disk_line[8]))     # Write MB/s
+                        # disk_d.append(float(disk_line[14]))     # MB/s
+                    logger.debug(f'The result of disks are: IO: {disk}, Read: {disk_r}, Write: {disk_w}')
+                    break
 
-        # according to each disk Read and Write calculate IO
-        total_disk_r = sum(disk_r)
-        total_disk_w = sum(disk_w)
-        total_disk = total_disk_r + total_disk_w
-        if total_disk == 0:
-            disk = 0.0
-        else:
-            disk_list = [(x + y) / total_disk * z for x, y, z in zip(disk_r, disk_w, disk1)]
-            disk = sum(disk_list)
-            del disk_list
+            # according to each disk Read and Write calculate IO
+            total_disk_r = sum(disk_r)
+            total_disk_w = sum(disk_w)
+            total_disk = total_disk_r + total_disk_w
+            if total_disk == 0:
+                disk = 0.0
+            else:
+                disk_list = [(x + y) / total_disk * z for x, y, z in zip(disk_r, disk_w, disk1)]
+                disk = sum(disk_list)
+                del disk_list
 
-        mem, mem_available = self.get_free_memory()
-        if self.java_info['status'] == 1 and self.java_info['port_status'] == 1:
-            tcp_num = self.get_port_tcp(self.java_info['port'], self.java_info['pid'])
-            port_tcp = tcp_num.get('tcp', 0)
-            close_wait = tcp_num.get('close_wait', 0)
-            time_wait = tcp_num.get('time_wait', 0)
-            jvm = self.get_jvm(self.java_info['port'], self.java_info['pid'])  # get JVM size
+            mem, mem_available = self.get_free_memory()
+            if self.java_info['status'] == 1 and self.java_info['port_status'] == 1:
+                tcp_num = self.get_port_tcp(self.java_info['port'], self.java_info['pid'])
+                port_tcp = tcp_num.get('tcp', 0)
+                close_wait = tcp_num.get('close_wait', 0)
+                time_wait = tcp_num.get('time_wait', 0)
+                jvm = self.get_jvm(self.java_info['port'], self.java_info['pid'])  # get JVM size
 
-        if bps1 and bps2:
-            data1 = bps1[0].split()
-            data2 = bps2[0].split()
-            rec = (int(data2[1]) - int(data1[1])) / 1048576
-            trans = (int(data2[9]) - int(data1[9])) / 1048576
-            # 400 = 8 * 100 / 2
-            # Why multiply by 8, because 1MB/s = 8Mb/s.
-            # Why divided by 2, because the network card is in full duplex mode.
-            network = 400 * (rec + trans) / self.network_speed
-            del bps1, bps2
-            logger.debug(f'The bandwidth of ethernet is: Receive {rec}MB/s, Transmit {trans}MB/s, Ratio {network}%')
+            if bps1 and bps2:
+                data1 = bps1[0].split()
+                data2 = bps2[0].split()
+                rec = (int(data2[1]) - int(data1[1])) / 1048576
+                trans = (int(data2[9]) - int(data1[9])) / 1048576
+                # 400 = 8 * 100 / 2
+                # Why multiply by 8, because 1MB/s = 8Mb/s.
+                # Why divided by 2, because the network card is in full duplex mode.
+                network = 400 * (rec + trans) / self.network_speed
+                del bps1, bps2
+                logger.debug(f'The bandwidth of ethernet is: Receive {rec}MB/s, Transmit {trans}MB/s, Ratio {network}%')
 
-        tcp, Retrans = self.get_tcp()
-        del result, disk_res, disk_r, disk_w, disk1
-        return {'disk': disk, 'disk_r': total_disk_r, 'disk_w': total_disk_w, 'disk_d': 0.0, 'cpu': cpu, 'iowait': iowait,
-                'usr_cpu': usr_cpu, 'mem': mem, 'mem_available': mem_available, 'rec': rec, 'trans': trans,
-                'network': network, 'tcp': tcp, 'retrans': Retrans, 'port_tcp': port_tcp, 'close_wait': close_wait,
-                'time_wait': time_wait, 'jvm': jvm}
+            tcp, Retrans = self.get_tcp()
+            del result, disk_res, disk_r, disk_w, disk1
+            return {'disk': disk, 'disk_r': total_disk_r, 'disk_w': total_disk_w, 'disk_d': 0.0, 'cpu': cpu, 'iowait': iowait,
+                    'usr_cpu': usr_cpu, 'mem': mem, 'mem_available': mem_available, 'rec': rec, 'trans': trans,
+                    'network': network, 'tcp': tcp, 'retrans': Retrans, 'port_tcp': port_tcp, 'close_wait': close_wait,
+                    'time_wait': time_wait, 'jvm': jvm}
+        except:
+            logger.error(traceback.format_exc())
+            return {}
 
     @staticmethod
     def get_free_memory():
@@ -444,7 +445,6 @@ class PerMon(object):
         del result
         return mem, mem_available
 
-    @handle_exception(is_return=True, default_value=(0, 0))
     def get_tcp(self):
         """
         Get the number of TCP and calculate the retransmission rate
@@ -459,7 +459,6 @@ class PerMon(object):
         del result, tcps
         return tcp, Retrans
 
-    @handle_exception(is_return=True, default_value={})
     def get_port_tcp(self, port, pid):
         """
         Get the number of TCP connections for the port
@@ -479,8 +478,8 @@ class PerMon(object):
             tcp_num.update({'close_wait': res.count('CLOSE-WAIT')})
             tcp_num.update({'time_wait': res.count('TIME-WAIT')})
             del res
-        except Exception as err:
-            logger.info(err)
+        except:
+            logger.error(traceback.format_exc())
         return tcp_num
 
     def get_cpu_cores(self):
@@ -527,7 +526,6 @@ class PerMon(object):
         else:
             self.cpu_info = f'total CPU cores is {self.cpu_cores}'
 
-    @handle_exception(is_return=True)
     def get_total_mem(self):
         """
         Get Memory
@@ -538,7 +536,6 @@ class PerMon(object):
         self.total_mem_100 = self.total_mem / 100
         logger.info(f'The total memory is {self.total_mem}G')
 
-    @handle_exception()
     def get_disks(self):
         """
         Get all disks number.
@@ -552,13 +549,11 @@ class PerMon(object):
                     for j in range(i + 1, len(disk_res)):
                         disk_line = disk_res[j].split()
                         self.all_disk.append(disk_line[0])
-
             del result, disk_res
             logger.info(f'The system has {len(self.all_disk)} disks, disk number is {"、".join(self.all_disk)}')
         else:
             raise Exception('The system does not support the iostat, please install sysstat. ')
 
-    @handle_exception(is_return=True)
     def get_system_nic(self):
         """
         Get network card.
@@ -566,139 +561,151 @@ class PerMon(object):
         be got. Use "cat /proc/net/dev" to view the order of the network cards.
         :return:
         """
-        network_card = []
-        result = os.popen('cat /proc/net/dev').readlines()   # get network data
-        logger.debug(f'The result for the first time is: {result}')
-        time.sleep(1)
-        result1 = os.popen('cat /proc/net/dev').readlines()  # get network data again
-        logger.debug(f'The result for the second time is: {result1}')
-        for i in range(len(result)):
-            if ':' in result[i]:
-                data = result[i].split()
-                data1 = result1[i].split()
-                if data[0] == data1[0]:
-                    logger.debug(f'The first data change is {data}')
-                    logger.debug(f'The second data change is {data1}')
-                    if data[1] != data1[1] or data[9] != data1[9]:     # If the data of network card changes, it means that the card is in use.
-                        network_card.append(data[0].strip(':'))
-                del data, data1
+        try:
+            network_card = []
+            result = os.popen('cat /proc/net/dev').readlines()   # get network data
+            logger.debug(f'The result for the first time is: {result}')
+            time.sleep(1)
+            result1 = os.popen('cat /proc/net/dev').readlines()  # get network data again
+            logger.debug(f'The result for the second time is: {result1}')
+            for i in range(len(result)):
+                if ':' in result[i]:
+                    data = result[i].split()
+                    data1 = result1[i].split()
+                    if data[0] == data1[0]:
+                        logger.debug(f'The first data change is {data}')
+                        logger.debug(f'The second data change is {data1}')
+                        if data[1] != data1[1] or data[9] != data1[9]:     # If the data of network card changes, it means that the card is in use.
+                            network_card.append(data[0].strip(':'))
+                    del data, data1
 
-        logger.debug(f'The data of network card is {network_card}')
-        if 'lo' in network_card:    # 'lo' is 127.0.0.1, need to be deleted.
-            network_card.pop(network_card.index('lo'))
+            logger.debug(f'The data of network card is {network_card}')
+            if 'lo' in network_card:    # 'lo' is 127.0.0.1, need to be deleted.
+                network_card.pop(network_card.index('lo'))
 
-        if len(network_card) > 0:
-            self.nic = network_card[0]
-            logger.info(f'The network card in use is {self.nic}')
-        else:
-            logger.error('The network card in use is not found.')
-        del result, result1, network_card
+            if len(network_card) > 0:
+                self.nic = network_card[0]
+                logger.info(f'The network card in use is {self.nic}')
+            else:
+                logger.error('The network card in use is not found.')
+            del result, result1, network_card
+        except:
+            logger.error(traceback.format_exc())
 
-    @handle_exception(is_return=True)
     def get_total_disk_size(self):
         """
         Get disk size
         :return:
         """
-        result = os.popen('df -m').readlines()
-        logger.debug(f'The data of disk is {result}')
-        for line in result:
-            res = line.split()
-            if '/dev/' in res[0]:
-                size = float(res[1])
-                self.total_disk += size
-        del result, res
-        logger.debug(f'The disks total size is {self.total_disk}M')
+        try:
+            result = os.popen('df -m').readlines()
+            logger.debug(f'The data of disk is {result}')
+            for line in result:
+                res = line.split()
+                if '/dev/' in res[0]:
+                    size = float(res[1])
+                    self.total_disk += size
+            del result, res
+            logger.debug(f'The disks total size is {self.total_disk}M')
 
-        self.total_disk_h = self.total_disk / 1024
-        if self.total_disk_h > 1024:
-            total = round(self.total_disk_h / 1024, 2)
-            self.total_disk_h = f'{total}T'
-        else:
-            total = round(self.total_disk_h, 2)
-            self.total_disk_h = f'{total}G'
+            self.total_disk_h = self.total_disk / 1024
+            if self.total_disk_h > 1024:
+                total = round(self.total_disk_h / 1024, 2)
+                self.total_disk_h = f'{total}T'
+            else:
+                total = round(self.total_disk_h, 2)
+                self.total_disk_h = f'{total}G'
 
-        logger.info(f'The total size of disks is {self.total_disk_h}')
+            logger.info(f'The total size of disks is {self.total_disk_h}')
+        except:
+            logger.error(traceback.format_exc())
 
-    @handle_exception(is_return=True, default_value=0)
     def get_used_disk_rate(self):
         """
         Get disks usage
         :return:
         """
         used_disk_size = 0
-        result = os.popen('df -m').readlines()
-        logger.debug(f'The data of disk is {result}')
-        for line in result:
-            res = line.split()
-            if '/dev/' in res[0]:
-                used_disk_size += float(res[2])
-        del result, res
-        logger.info(f'The used size of disks is {used_disk_size}M')
+        try:
+            result = os.popen('df -m').readlines()
+            logger.debug(f'The data of disk is {result}')
+            for line in result:
+                res = line.split()
+                if '/dev/' in res[0]:
+                    used_disk_size += float(res[2])
+            del result, res
+            logger.info(f'The used size of disks is {used_disk_size}M')
+        except:
+            logger.error(traceback.format_exc())
         return used_disk_size / self.total_disk
 
-    @handle_exception(is_return=True)
     def get_system_net_speed(self):
         """
         Get bandwidth, Mbs
         :return:
         """
-        if self.nic:
-            result = os.popen(f'ethtool {self.nic}').readlines()
-            logger.debug(f'The bandwidth is {result}')
-            for line in result:
-                if 'Speed' in line:
-                    logger.debug(f'The bandwidth is {line}')
-                    res = re.findall(r"(\d+)", line)
-                    try:
-                        speed = int(res[0])
-                        if 'G' in line:
-                            speed = speed * 1024
-                        if 'K' in line:
-                            speed = speed / 1024
+        try:
+            if self.nic:
+                result = os.popen(f'ethtool {self.nic}').readlines()
+                logger.debug(f'The bandwidth is {result}')
+                for line in result:
+                    if 'Speed' in line:
+                        logger.debug(f'The bandwidth is {line}')
+                        res = re.findall(r"(\d+)", line)
+                        try:
+                            speed = int(res[0])
+                            if 'G' in line:
+                                speed = speed * 1024
+                            if 'K' in line:
+                                speed = speed / 1024
 
-                        self.network_speed = speed
-                        break
-                    except IndexError:
-                        logger.error(traceback.format_exc())
-            del result
-            logger.info(f'The bandwidth of ethernet is {self.network_speed}Mb/s')
+                            self.network_speed = speed
+                            break
+                        except IndexError:
+                            logger.error(traceback.format_exc())
+                del result
+                logger.info(f'The bandwidth of ethernet is {self.network_speed}Mb/s')
+        except:
+            logger.error(traceback.format_exc())
 
-    @handle_exception(is_return=True)
     def get_system_version(self):
         """
         Get system version
         :return:
         """
         try:
-            result = os.popen('cat /etc/redhat-release').readlines()    # system release version
+            result = os.popen('cat /etc/redhat-release').readlines()[0]    # system release version
             logger.debug(f'The system release version is {result}')
-            self.system_version = result[0].strip()
+            self.system_version = result.strip()
         except Exception as err:
             logger.warning(err)
             result = os.popen('cat /proc/version').readlines()[0]   # system kernel version
-            logger.debug(f'The system kernel version is{result}')
+            logger.debug(f'The system kernel version is {result}')
             res = re.findall(r"gcc.*\((.*?)\).*GCC", result.strip())
             if res:
                 self.system_version = res[0]
             else:
                 res = re.findall(r"gcc.*\((.*?)\)", result.strip())
                 self.system_version = res[0]
+            del res
         del result
         logger.info(f'system release/kernel version is {self.system_version}')
 
-    @handle_exception(is_return=True, default_value=0)
     def get_RetransSegs(self):
         """
             Get the number of TCP RetransSegs
             :return:
         """
-        result = os.popen('cat /proc/net/snmp |grep Tcp').readlines()
-        tcps = result[-1].split()
-        logger.debug(f'The TCP is: {tcps}')
-        Retrans = int(tcps[-4])
-        del result, tcps
-        return Retrans
+        try:
+            result = os.popen('cat /proc/net/snmp |grep Tcp').readlines()
+            tcps = result[-1].split()
+            logger.debug(f'The TCP is: {tcps}')
+            Retrans = int(tcps[-4])
+            del result, tcps
+            return Retrans
+        except:
+            logger.error(traceback.format_exc())
+            return 0
 
     def get_java_info(self):
         """
@@ -882,7 +889,6 @@ class PerMon(object):
         self.first_mem()
 
 
-@handle_exception(is_return=True)
 def port_to_pid(port):
     """
      Get pid based on port
@@ -890,56 +896,73 @@ def port_to_pid(port):
     :return: pid
     """
     pid = None
-    result = os.popen(f'ss -nlp|grep :{port}').readlines()
-    logger.debug(f'The result of the port {port} is {result}')
-    p = result[0].strip().split()
-    pp = p[4].split(':')[-1]
-    if str(port) == pp:
-        pid = p[-1].split('pid=')[-1].split(',')[0]
-        logger.info(f'The pid of the port {port} is {pid}.')
-
-    del result, p, pp
+    try:
+        result = os.popen(f'ss -nlp|grep :{port}').readlines()
+        logger.debug(f'The result of the port {port} is {result}')
+        p = result[0].strip().split()
+        pp = p[4].split(':')[-1]
+        if str(port) == pp:
+            pid = p[-1].split('pid=')[-1].split(',')[0]
+            logger.info(f'The pid of the port {port} is {pid}.')
+        del result, p, pp
+    except:
+        logger.error(traceback.format_exc())
     return pid
 
 
-@handle_exception(is_return=True)
 def notification(msg):
     """
      Send email.
     :param msg: Email body
     :return:
     """
-    url = f'http://{cfg.getLogging("address")}/setMessage'
-
-    header = {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json; charset=UTF-8"}
-
-    post_data = {
-        'host': get_ip(),
-        'msg': msg
-    }
-
-    logger.debug(f'The content of the email is {msg}')
-
-    res = requests.post(url=url, json=post_data, headers=header)
-    if res.status_code == 200:
-        response = json.loads(res.content.decode())
-        if response['code'] == 0:
-            logger.info('Send email successfully.')
+    try:
+        url = f'http://{cfg.getLogging("address")}/setMessage'
+        header = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Encoding": "gzip, deflate",
+            "Content-Type": "application/json; charset=UTF-8"}
+        post_data = {'host': get_ip(), 'msg': msg}
+        logger.debug(f'The content of the email is {msg}')
+        res = requests.post(url=url, json=post_data, headers=header)
+        if res.status_code == 200:
+            response = json.loads(res.content.decode())
+            if response['code'] == 0:
+                logger.info('Send email successfully.')
+            else:
+                logger.error(response['msg'])
         else:
-            logger.error(response['msg'])
-    else:
-        logger.error('Failed to send mail.')
+            logger.error('Failed to send mail.')
+    except:
+        logger.error(traceback.format_exc())
 
+
+def get_ip():
+    """
+    Get server's IP address
+    :return: IP address
+    """
+    ip = '127.0.0.1'
+    try:
+        if cfg.getServer('host'):
+            ip = cfg.getServer('host')
+        else:
+            result = os.popen("hostname -I |awk '{print $1}'").readlines()
+            logger.debug(result)
+            if result:
+                ip = result[0].strip()
+                logger.info(f'The IP address is: {ip}')
+            else:
+                logger.warning('Server IP address not found!')
+    except:
+        logger.error(traceback.format_exc())
+    return ip
 
 def http_post(url, post_data):
     header = {
         "Accept": "application/json, text/plain, */*",
         "Accept-Encoding": "gzip, deflate",
         "Content-Type": "application/json; charset=UTF-8"}
-
     try:
         res = requests.post(url=url, json=post_data, headers=header)
         logger.debug(f"The result of request is {res.content.decode('unicode_escape')}")
