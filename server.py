@@ -44,8 +44,7 @@ async def run_monitor(request):
 
     except Exception as err:
         logger.error(traceback.format_exc())
-        return web.json_response({
-            'code': 2, 'msg': str(err), 'data': {'host': HOST, 'port': None, 'pid': None}})
+        return web.json_response({'code': 2, 'msg': str(err), 'data': {'host': HOST, 'port': None, 'pid': None}})
 
 
 async def get_gc(request):

@@ -14,6 +14,8 @@ import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from common import handle_exception, get_ip
 from logger import logger, cfg
+import tracemalloc
+import linecache
 # from guppy import hpy
 
 
@@ -49,6 +51,7 @@ class PerMon(object):
 
         self.system_version = ''   # system version
         self.cpu_info = ''
+        self.snapshot = ''
         self.cpu_usage = 0.0    # CPU usage
         self.cpu_cores = 0      # number of CPU core
         self.mem_usage = 0.0    # memory usage
@@ -121,8 +124,9 @@ class PerMon(object):
         self.scheduler.add_job(self.get_java_info, trigger='interval',args=(), seconds=60, id='get_java_info')
         self.scheduler.add_job(self.register_agent, trigger='interval', args=(), seconds=8, id='register_agent')
         self.scheduler.add_job(self.write_system_cpu_mem, trigger='interval', args=(), seconds=self.system_interval, id='write_system_cpu_mem')
-        self.scheduler.add_job(self.dump_mem, trigger='interval', args=(), hours=1, id='dump_mem')
+        self.scheduler.add_job(self.first_mem, trigger='interval', args=(), hours=1, id='dump_mem')
         self.scheduler.start()
+        tracemalloc.start()
 
     @property
     def start(self):
@@ -829,21 +833,53 @@ class PerMon(object):
         os.popen(f'echo {cache_type} > /proc/sys/vm/drop_caches')
         logger.info('Clear the cache successfully.')
 
+    def first_mem(self):
+        logger.info("-" * 99)
+        snapshot = tracemalloc.take_snapshot()
+        snapshot = snapshot.filter_traces((
+            tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+            tracemalloc.Filter(False, "<unknown>"),
+        ))
+        top_stats = snapshot.statistics('lineno')
+
+        for index, stat in enumerate(top_stats[:10], 1):
+            frame = stat.traceback[0]
+            filename = os.sep.join(frame.filename.split(os.sep)[-2:])
+            logger.info("#%s: %s:%s: %.1f KiB"
+                  % (index, filename, frame.lineno, stat.size / 1024))
+            line = linecache.getline(frame.filename, frame.lineno).strip()
+            if line:
+                logger.info('    %s' % line)
+
+        other = top_stats[10:]
+        if other:
+            size = sum(stat.size for stat in other)
+            logger.info("%s other: %.1f KiB" % (len(other), size / 1024))
+        total = sum(stat.size for stat in top_stats)
+        logger.info("Total allocated size: %.1f KiB" % (total / 1024))
+        logger.info("-" * 99)
+
     def dump_mem(self):
         logger.info("-" * 99)
-        obj_list = []
-        for obj in gc.get_objects():
-            obj_list.append((obj, sys.getsizeof(obj)))
-        for obj, size in sorted(obj_list, key=lambda x: x[1], reverse=True)[:10]:
-            try:
-                logger.info(f"OBJ: {id(obj)}, TYPE: {str(obj.__class__) if hasattr(obj, '__class__') else type(obj)}, SIZE: {size/1024/1024:.2f}MB {str(obj)[:500]}")
-            except AttributeError:
-                logger.info(
-                    f"OBJ: {id(obj)}, TYPE: {str(obj.__class__) if hasattr(obj, '__class__') else type(obj)}, SIZE: {size / 1024 / 1024:.2f}MB")
+        s1 = tracemalloc.take_snapshot()
+        top_stats = s1.compare_to(self.snapshot, 'lineno')
+        for stat in top_stats[:10]:
+            if stat.size_diff < 0: continue
+            logger.info(stat)
+        # obj_list = []
+        # for obj in gc.get_objects():
+        #     obj_list.append((obj, sys.getsizeof(obj)))
+        # for obj, size in sorted(obj_list, key=lambda x: x[1], reverse=True)[:10]:
+        #     try:
+        #         logger.info(f"OBJ: {id(obj)}, TYPE: {str(obj.__class__) if hasattr(obj, '__class__') else type(obj)}, SIZE: {size/1024/1024:.2f}MB {str(obj)[:500]}")
+        #     except AttributeError:
+        #         logger.info(
+        #             f"OBJ: {id(obj)}, TYPE: {str(obj.__class__) if hasattr(obj, '__class__') else type(obj)}, SIZE: {size / 1024 / 1024:.2f}MB")
         logger.info("-" * 99)
         # heap = hpy().heap()
         # logger.info(heap)
         # logger.info("-" * 99)
+        self.first_mem()
 
 
 @handle_exception(is_return=True)
