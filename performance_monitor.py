@@ -712,6 +712,8 @@ class PerMon(object):
         Find java service
         """
         try:
+            stat = gc.get_stats()
+            logger.info(f"分配内存的次数减去释放内存的次数：{stat[0]['collected']}")
             if self.java_info['status'] == 0 and self.java_info['port_status'] == 0:
                 pid = os.popen("ps -ef|grep java |grep " + self.group + " |grep -v grep |awk '{print $1}'").readlines()[0]
                 if pid.strip():
