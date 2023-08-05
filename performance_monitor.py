@@ -92,6 +92,7 @@ class PerMon(object):
         self.net_flag = True    # Flag of whether to send mail when the Network usage is too high
 
         self.monitor()
+        tracemalloc.start()
 
     @property
     def start(self):
@@ -210,14 +211,6 @@ class PerMon(object):
                         line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
 
                         self.monitor_task.put((self.alert_msg, (res, line)))
-                    del res
-                    # logger.error("*" * 60)
-                    # obj_list = []
-                    # for obj in gc.get_objects():
-                    #     obj_list.append((obj, sys.getsizeof(obj)))
-                    # for obj, size in sorted(obj_list, key=lambda x: x[1], reverse=True)[:10]:
-                    #     logger.error(f"OBJ: {id(obj)}, TYPE: {type(obj)}, SIZE: {size/1024/1024:.2f}MB, {str(obj)}")
-
                 except:
                     logger.error(traceback.format_exc())
 
@@ -289,7 +282,6 @@ class PerMon(object):
             logger.error(traceback.format_exc())
         finally:
             del msg, data
-            gc.collect()
 
     @handle_exception(is_return=True, default_value=0.0)
     def get_jvm(self, port, pid):
