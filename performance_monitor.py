@@ -79,7 +79,7 @@ class PerMon(object):
 
         self.get_config_from_server()
         self.monitor_task = queue.Queue()   # FIFO queue
-        self.executor = ThreadPoolExecutor(self.thread_pool)
+        #self.executor = ThreadPoolExecutor(self.thread_pool)
         self.scheduler = BackgroundScheduler()
 
         self.FGC = {}           # full gc times
@@ -117,7 +117,7 @@ class PerMon(object):
                      'time_wait': 0
                  }}]
 
-        self.monitor()
+        # self.monitor()
         self.scheduler.add_job(self.get_current_usage_rate, trigger='interval', args=(), seconds=300, id='get_current_usage_rate')
         self.scheduler.add_job(self.get_java_info, trigger='interval',args=(), seconds=60, id='get_java_info')
         self.scheduler.add_job(self.register_agent, trigger='interval', args=(), seconds=8, id='register_agent')
@@ -842,6 +842,7 @@ class PerMon(object):
 
     def first_mem(self):
         logger.info("-" * 99)
+        gc.collect()
         snapshot = tracemalloc.take_snapshot()
         snapshot = snapshot.filter_traces((
             tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
