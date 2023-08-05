@@ -10,7 +10,8 @@ import json
 import queue
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-
+import tracemalloc
+import linecache
 import requests
 from common import handle_exception, get_ip
 from logger import logger, cfg
@@ -830,6 +831,7 @@ class PerMon(object):
                     start_time = time.time()
 
                 if time.time() - disk_start_time > 300:
+                    self.first_mem()
                     disk_usage = self.get_used_disk_rate()
                     if disk_usage:
                         post_data['disk_usage'] = disk_usage    # disk space usage, without %
@@ -856,6 +858,33 @@ class PerMon(object):
             except:
                 logger.error(traceback.format_exc())
                 time.sleep(3)
+
+    def first_mem(self):
+        logger.info("-" * 99)
+        gc.collect()
+        snapshot = tracemalloc.take_snapshot()
+        snapshot = snapshot.filter_traces((
+            tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+            tracemalloc.Filter(False, "<unknown>"),
+        ))
+        top_stats = snapshot.statistics('lineno')
+
+        for index, stat in enumerate(top_stats[:10], 1):
+            frame = stat.traceback[0]
+            filename = os.sep.join(frame.filename.split(os.sep)[-2:])
+            logger.info("#%s: %s:%s: %.1f KiB"
+                  % (index, filename, frame.lineno, stat.size / 1024))
+            line = linecache.getline(frame.filename, frame.lineno).strip()
+            if line:
+                logger.info('    %s' % line)
+
+        other = top_stats[10:]
+        if other:
+            size = sum(stat.size for stat in other)
+            logger.info("%s other: %.1f KiB" % (len(other), size / 1024))
+        total = sum(stat.size for stat in top_stats)
+        logger.info("Total allocated size: %.1f KiB" % (total / 1024))
+        logger.info("-" * 99)
 
     def clear_cache(self, cache_type):
         """
