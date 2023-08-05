@@ -3,8 +3,6 @@
 # Author: leeyoshinari
 import os
 import re
-import gc
-import sys
 import time
 import json
 import queue
@@ -209,11 +207,9 @@ class PerMon(object):
                         line[0]['fields']['close_wait'] = res['close_wait']
                         line[0]['fields']['time_wait'] = res['time_wait']
                         line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
-
                         self.monitor_task.put((self.alert_msg, (res, line)))
                 except:
                     logger.error(traceback.format_exc())
-
                 time.sleep(self.system_interval)
             else:
                 time.sleep(3)
@@ -280,8 +276,6 @@ class PerMon(object):
                 self.net_flag = True  # If network usage is normally, reset it to True
         except:
             logger.error(traceback.format_exc())
-        finally:
-            del msg, data
 
     @handle_exception(is_return=True, default_value=0.0)
     def get_jvm(self, port, pid):
@@ -839,21 +833,17 @@ class PerMon(object):
                         else:
                             disk_flag = True
                     del disk_usage
-                    gc.collect()
 
                 if self.java_info['port_status'] == 0 and time.time() - java_start_time > 59:
                     self.get_java_info()
                     java_start_time = time.time()
-
                 time.sleep(2)
-
             except:
                 logger.error(traceback.format_exc())
                 time.sleep(3)
 
     def first_mem(self):
         logger.info("-" * 99)
-        gc.collect()
         snapshot = tracemalloc.take_snapshot()
         snapshot = snapshot.filter_traces((
             tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
