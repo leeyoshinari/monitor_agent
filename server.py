@@ -10,6 +10,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 import gc
 import sys
+import redis
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from logger import logger, cfg
@@ -24,6 +25,11 @@ class PerMon(object):
         self.influx_post_url = f'http://{cfg.getLogging("address")}/influx/write'
         self.room_id = None  # server room id
         self.group = None   # server group id
+        self.influx_stream = 'influx_stream'  # stream name
+        self.redis_host = '127.0.0.1'
+        self.redis_port = 6379
+        self.redis_password = '123456'
+        self.redis_db = 0
         self.thread_pool = 3
         self.period_length = cfg.getMonitor('PeriodLength')
         self.frequencyFGC = cfg.getMonitor('frequencyFGC')
@@ -102,7 +108,8 @@ class PerMon(object):
                      'close_wait': 0,
                      'time_wait': 0
                  }}]
-
+        self.redis_client = redis.StrictRedis(host=self.redis_host, port=self.redis_port, password=self.redis_password,
+                                              db=self.redis_db, decode_responses=True)
         self.monitor()
         tracemalloc.start()
         self.snapshot = tracemalloc.take_snapshot()
@@ -118,17 +125,15 @@ class PerMon(object):
         while True:
             try:
                 res = http_post(url, post_data)
-                logger.info(f"The result of registration is {res.content.decode('unicode_escape')}")
-                if res.status_code == 200:
-                    response_data = json.loads(res.content.decode('unicode_escape'))
-                    if response_data['code'] == 0:
-                        self.group = 'server_' + response_data['data']['groupKey']
-                        self.room_id = response_data['data']['roomId']
-                        break
-                    else:
-                        logger.error(response_data['msg'])
-                        raise Exception(response_data['msg'])
+                logger.info(f"The result of registration is {res}")
+                self.redis_host = res['redis']['host']
+                self.redis_port = res['redis']['port']
+                self.redis_password = res['redis']['password']
+                self.redis_db = res['redis']['db']
+                self.group = 'server_' + res['groupKey']
+                self.room_id = res['roomId']
                 time.sleep(1)
+                break
             except:
                 logger.error(traceback.format_exc())
                 time.sleep(1)
@@ -188,7 +193,7 @@ class PerMon(object):
                     self.line[0]['fields']['close_wait'] = res['close_wait']
                     self.line[0]['fields']['time_wait'] = res['time_wait']
                     self.line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    _ = http_post(self.influx_post_url, {'data': self.line})
+                    self.redis_client.xadd(self.influx_stream, {'data': json.dumps(self.line)})
 
                     self.last_cpu_usage.pop(0)
                     self.last_net_usage.pop(0)
@@ -705,8 +710,7 @@ class PerMon(object):
                     post_data['net_usage'] = self.net_usage
                     post_data['gc'] = self.gc_info
                     post_data['ffgc'] = self.ffgc
-                    data_list = ['Server_' + self.IP, json.dumps(post_data, ensure_ascii=False), 12]
-                    _ = http_post(url, {'data': data_list})
+                    self.redis_client.set(name='Server_' + self.IP, value=json.dumps(post_data, ensure_ascii=False), ex=12)
                     logger.info('Agent registers successful ~')
                     start_time = time.time()
                 if time.time() - disk_start_time > 300:
@@ -855,9 +859,16 @@ def http_post(url, post_data):
         "Content-Type": "application/json; charset=UTF-8"}
     try:
         res = requests.post(url=url, json=post_data, headers=header)
-        logger.debug(f"The result of request is {res.content.decode('unicode_escape')}")
-        return res
+        logger.info(f"The result of request is {res.content.decode('unicode_escape')}")
+        if res.status_code == 200:
+            response_data = json.loads(res.content.decode('unicode_escape'))
+            if response_data['code'] == 0:
+                return response_data['data']
+            else:
+                logger.error(response_data['msg'])
+                raise Exception(response_data['msg'])
     except:
+        logger.error(traceback.format_exc())
         raise
 
 
