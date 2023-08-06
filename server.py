@@ -105,6 +105,7 @@ class PerMon(object):
 
         self.monitor()
         tracemalloc.start()
+        self.snapshot = tracemalloc.take_snapshot()
 
     def get_config_from_server(self):
         url = f'http://{cfg.getLogging("address")}/register'
@@ -139,7 +140,10 @@ class PerMon(object):
         """
         while True:
             func, param = self.monitor_task.get()
-            func(param)
+            if param:
+                func(param)
+            else:
+                func()
             self.monitor_task.task_done()
 
     def monitor(self):
@@ -151,9 +155,9 @@ class PerMon(object):
             self.executor.submit(self.worker)
 
         # Put registration and cleanup tasks in the queue
-        self.monitor_task.put((self.register_agent, ()))
+        self.monitor_task.put((self.register_agent, None))
         # Put the tasks of the monitoring system into the queue
-        self.monitor_task.put((self.write_system_cpu_mem, ()))
+        self.monitor_task.put((self.write_system_cpu_mem, None))
 
     def write_system_cpu_mem(self):
         """
@@ -227,17 +231,12 @@ class PerMon(object):
                             self.monitor_task.put((notification, msg))
                     self.gc_info = [int(res[12]), float(res[13]), fgc, float(res[15])]
                     self.ffgc = frequency
-
                 # Write FGC times and time to log
                 logger.warning(f"The port {port} has Full GC {self.FGC[str(port)]} times.")
-
             elif self.FGC[str(port)] > fgc:   # If the times of FGC is reduced, the port may be restarted, then reset it
                 self.FGC[str(port)] = 0
-
             if self.FGC[str(port)] == 0:    # If the times of FGC is 0, reset FGC time.
                 self.FGC_time[str(port)] = []
-
-            del res
             return mem / 1048576    # 1048576 = 1024 * 1024
         except:
             logger.error(traceback.format_exc())
@@ -460,7 +459,6 @@ class PerMon(object):
                     for j in range(i + 1, len(disk_res)):
                         disk_line = disk_res[j].split()
                         self.all_disk.append(disk_line[0])
-            del result, disk_res
             logger.info(f'The system has {len(self.all_disk)} disks, disk number is {"、".join(self.all_disk)}')
         else:
             raise Exception('The system does not support the iostat, please install sysstat. ')
@@ -797,7 +795,6 @@ def port_to_pid(port):
         if str(port) == pp:
             pid = p[-1].split('pid=')[-1].split(',')[0]
             logger.info(f'The pid of the port {port} is {pid}.')
-        del result, p, pp
     except:
         logger.error(traceback.format_exc())
     return pid
