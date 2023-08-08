@@ -8,14 +8,9 @@ import json
 import queue
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-import gc
-import sys
 import redis
 import requests
-from apscheduler.schedulers.background import BackgroundScheduler
 from logger import logger, cfg
-import tracemalloc
-import linecache
 
 
 class PerMon(object):
@@ -71,7 +66,6 @@ class PerMon(object):
         self.get_config_from_server()
         self.monitor_task = queue.Queue()   # FIFO queue
         self.executor = ThreadPoolExecutor(self.thread_pool)
-        self.scheduler = BackgroundScheduler()
 
         self.FGC = {}           # full gc times
         self.FGC_time = {}      # full gc time
@@ -110,8 +104,6 @@ class PerMon(object):
         self.redis_client = redis.StrictRedis(host=self.redis_host, port=self.redis_port, password=self.redis_password,
                                               db=self.redis_db, decode_responses=True)
         self.monitor()
-        tracemalloc.start()
-        self.snapshot = tracemalloc.take_snapshot()
 
     def get_config_from_server(self):
         url = f'http://{cfg.getLogging("address")}/register'
@@ -657,21 +649,6 @@ class PerMon(object):
             logger.error(msg)
             raise Exception(msg)
 
-        try:
-            version = exec_cmd("pidstat -V |grep ysstat |awk '{print $3}' |awk -F '.' '{print $1}'")[0]
-            v = int(version.strip())
-            if v < 12:
-                msg = 'The pidstat version is too low, please upgrade to version 12+, download link: ' \
-                      'http://sebastien.godard.pagesperso-orange.fr/download.html'
-                logger.error(msg)
-                raise Exception(msg)
-        except IndexError:
-            logger.error(traceback.format_exc())
-            msg = 'Please install or upgrade sysstat to version 12+, download link: ' \
-                  'http://sebastien.godard.pagesperso-orange.fr/download.html'
-            logger.error(msg)
-            raise Exception(msg)
-
     def register_agent(self):
         """
         Timed task. One is register, the other one is clean up the ports that stopped monitoring.
@@ -734,33 +711,6 @@ class PerMon(object):
         logger.info(f'Start Cleaning up cache: echo {cache_type} > /proc/sys/vm/drop_caches')
         _ = exec_cmd(f'echo {cache_type} > /proc/sys/vm/drop_caches')
         logger.info('Clear the cache successfully.')
-
-    def first_mem(self):
-        logger.info("-" * 99)
-        gc.collect()
-        snapshot = tracemalloc.take_snapshot()
-        snapshot = snapshot.filter_traces((
-            tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
-            tracemalloc.Filter(False, "<unknown>"),
-        ))
-        top_stats = snapshot.statistics('lineno')
-
-        for index, stat in enumerate(top_stats[:10], 1):
-            frame = stat.traceback[0]
-            filename = os.sep.join(frame.filename.split(os.sep)[-2:])
-            logger.info("#%s: %s:%s: %.1f KiB"
-                  % (index, filename, frame.lineno, stat.size / 1024))
-            line = linecache.getline(frame.filename, frame.lineno).strip()
-            if line:
-                logger.info('    %s' % line)
-
-        other = top_stats[10:]
-        if other:
-            size = sum(stat.size for stat in other)
-            logger.info("%s other: %.1f KiB" % (len(other), size / 1024))
-        total = sum(stat.size for stat in top_stats)
-        logger.info("Total allocated size: %.1f KiB" % (total / 1024))
-        logger.info("-" * 99)
 
 
 def exec_cmd(cmd):

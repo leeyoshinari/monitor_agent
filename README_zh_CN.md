@@ -42,7 +42,7 @@
 
 3. 修改配置文件 `config.ini`
 
-4. 检查`sysstat`版本。分别使用`iostat -V`和`pidstat -V`命令，`12.4.0`版本已经测试过了，如果不是这个版本，[请点我](http://sebastien.godard.pagesperso-orange.fr/download.html) 下载。
+4. 检查`sysstat`版本。分别使用`iostat -V`命令，`12.4.0`版本已经测试过了，如果不是这个版本，[请点我](http://sebastien.godard.pagesperso-orange.fr/download.html) 下载。
 
 5. 运行`server.py`
    ```shell
@@ -57,18 +57,16 @@ pyinstaller安装过程自行百度，下面直接进行打包：<br>
     (1)安装好python环境，安装第三方包，确保程序可以正常运行；<br>
     (2)进入文件夹，开始打包：<br>
     ```shell
-    pyinstaller -F server.py -p performance_monitor.py -p logger.py -p config.py -p __init__.py --hidden-import logger --hidden-import performance_monitor --hidden-import config
+    pyinstaller -F server.py -p logger.py -p config.py -p __init__.py --hidden-import logger --hidden-import config
     ```
     (3)打包完成后，在当前路径下会生成dist文件夹，进入`dist`即可找到可执行文件`server`;<br>
-    (4)将配置文件`config.ini`拷贝到`dist`文件夹下，并修改配置文件；<br>
-    (5)将`dist`整个文件夹拷贝到其他环境，启动server
-    ```shell
-    nohup ./server &
-    ```
+    (4)将配置文件`config.conf`拷贝到`dist`文件夹下，并修改配置文件；<br>
+    (5)压缩文件`zip monitor_agent.zip server config.conf`；<br>
+    (6)上传压缩包到 [MyPlatform](https://github.com/leeyoshinari/MyPlatform.git) ，并部署；<br>
    `由于需要在待监控的服务器上运行，在CentOS系统X86架构的服务器上打包完成的可执行文件，只能运行在CentOS系统X86架构的服务器上；其他系统和架构的服务器需要重新打包。`<br>
 
 ## 注意
-1. 服务器必须支持以下命令：`jstat`、`iostat`、`pidstat`、`netstat`，如不支持，请安装。
+1. 服务器必须支持以下命令：`jstat`、`iostat`，如不支持，请安装。
 
 2. sysstat的版本必须是12+，目前测试过12的版本，其他版本未测试过，使用老版本可能会导致数据异常；最新版本下载地址[请点我](http://sebastien.godard.pagesperso-orange.fr/download.html) 。
 
@@ -79,9 +77,6 @@ pyinstaller安装过程自行百度，下面直接进行打包：<br>
 5. 当前程序几乎可以运行在任何可以运行python的linux系统上，已测试过的系统`CentOS`、`Ubuntu`、`中标麒麟`、`银河麒麟`，支持`X86_64`和`ARM`架构。
 
 ## Requirements
-1. aiohttp>=3.6.2
-2. aiohttp-jinja2>=1.2.0
-3. influxdb>=5.3.0
-4. Jinja2>=2.11.2
-5. requests>=2.24.0
-6. Python 3.7+
+1. redis>=4.1.0
+2. requests>=2.24.0
+3. Python 3.7+
