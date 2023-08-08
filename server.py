@@ -184,7 +184,7 @@ class PerMon(object):
                     self.line[0]['fields']['close_wait'] = res['close_wait']
                     self.line[0]['fields']['time_wait'] = res['time_wait']
                     self.line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    self.redis_client.xadd(self.influx_stream, {'data': json.dumps(self.line)})
+                    self.redis_client.xadd(self.influx_stream, {'data': json.dumps(self.line)}, maxlen=100)
 
                     self.last_cpu_usage.pop(0)
                     self.last_net_usage.pop(0)
@@ -812,3 +812,7 @@ def http_post(url, post_data):
 
 if __name__ == '__main__':
     perf = PerMon()
+    time.sleep(2)
+    PID = os.getpid()
+    with open('pid', 'w', encoding='utf-8') as f:
+        f.write(str(PID))
