@@ -14,7 +14,7 @@ This Repository is modified based on the [Source Repository](https://github.com/
 3. Package. Using `pyinstaller` to package python code. 
 - (1) Enter folder, run:<br>
     ```shell
-    pyinstaller -F server.py -p performance_monitor.py -p logger.py -p config.py -p common.py -p __init__.py --hidden-import logger --hidden-import performance_monitor --hidden-import common --hidden-import config
+    pyinstaller -F server.py -p logger.py -p config.py -p __init__.py --hidden-import logger --hidden-import config
     ```
 - (2) Copy `config.conf` to the `dist` folder, cmd: `cp config.conf dist/`
 - (3) Enter `dist` folder, zip files, cmd: `zip monitor_agent.zip server config.conf`
@@ -24,7 +24,7 @@ This Repository is modified based on the [Source Repository](https://github.com/
 NOTE: For Linux Server, the executable file packaged on the server of the CentOS system X86 architecture can only run on the server of the CentOS system X86 architecture; servers of other system and architecture need to be repackaged. <br>
 
 ## Note
-1. The server must support the following commands: `ps`, `jstat`, `iostat`, `pidstat` and `netstat`, if not, please install them. 
+1. The server must support the following commands: `ps`, `jstat` and `iostat`, if not, please install them. 
 
 2. The network card of server must be in full duplex mode, if not, the network usage will be incorrect.
 
