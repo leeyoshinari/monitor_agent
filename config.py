@@ -28,5 +28,8 @@ class Config(object):
         else:
             return self.cfg.getint('monitor', key, fallback=0)
 
+    def getNginx(self, key):
+        return self.cfg.get('nginx', key, fallback=None)
+
     def __del__(self):
         pass

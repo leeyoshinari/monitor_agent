@@ -10,6 +10,8 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 import redis
 import requests
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import ASYNCHRONOUS
 from logger import logger, cfg
 
 
@@ -19,12 +21,18 @@ class PerMon(object):
         self.IP = get_ip()
         self.room_id = None  # server room id
         self.group = None   # server group id
+        self.monitor_key = ''
+        self.nginx_key = ''
         self.influx_stream = 'influx_stream'  # stream name
         self.redis_host = '127.0.0.1'
         self.redis_port = 6379
         self.redis_password = '123456'
         self.redis_db = 0
         self.thread_pool = 3
+        self.influx_url = 'http://127.0.0.1:8086'
+        self.influx_org = 'influxdb'
+        self.influx_token = 'ZgL0t-L5QmFq-JGQg6XhghW_zVWFfzDoDI05dQ=='
+        self.influx_bucket = 'influxdb'
         self.period_length = cfg.getMonitor('PeriodLength')
         self.frequencyFGC = cfg.getMonitor('frequencyFGC')
         self.isJvmAlert = cfg.getMonitor('isJvmAlert')
@@ -53,6 +61,12 @@ class PerMon(object):
         self.java_info = {'status': 0, 'pid': '', 'port': '', 'port_status': 0}
         self.gc_info = [-1, -1, -1, -1]     # 'ygc', 'ygct', 'fgc', 'fgct'
         self.ffgc = 999999
+        self.prefix = ''
+
+        # log_format  main   '$remote_addr - $remote_user [$time_iso8601] $request_method $request_uri $server_protocol $status $body_bytes_sent $upstream_response_time "$http_referer" "$http_user_agent" "$http_x_forwarded_for"';
+        self.compiler = re.compile(r'(?P<ip>.*?)- - \[(?P<time>.*?)\] (?P<method>.*?) (?P<path>.*?) (?P<protocol>.*?) (?P<status>.*?) (?P<bytes>.*?) (?P<rt>.*?) "(?P<referer>.*?)" "(?P<ua>.*?)"')
+        self.is_nginx = int(cfg.getNginx('isNginx'))
+        self.access_log = cfg.getNginx('nginxAccessLogPath')
 
         self.get_system_version()
         self.get_cpu_cores()
@@ -62,6 +76,8 @@ class PerMon(object):
         self.get_system_net_speed()
         self.get_total_disk_size()
         self.get_java_info()
+        if not self.access_log and self.is_nginx:
+            self.find_nginx_log()
 
         self.get_config_from_server()
         self.monitor_task = queue.Queue()   # FIFO queue
@@ -78,35 +94,14 @@ class PerMon(object):
         self.echo_flag = True   # Flag of whether to clean up cache
         self.io_flag = True     # Flag of whether to send mail when the IO is too high
         self.net_flag = True    # Flag of whether to send mail when the Network usage is too high
-        self.line = [{'measurement': self.group,
-                 'tags': {'host': self.IP, 'room': self.room_id},
-                 'fields': {
-                     'c_time': '',
-                     'cpu': 0.0,
-                     'iowait': 0.0,
-                     'usr_cpu': 0.0,
-                     'mem': 0.0,
-                     'mem_available': 0.0,
-                     'jvm': 0.0,
-                     'disk': 0.0,
-                     'disk_r': 0.0,
-                     'disk_w': 0.0,
-                     'disk_d': 0.0,
-                     'rec': 0.0,
-                     'trans': 0.0,
-                     'net': 0.0,
-                     'tcp': 0,
-                     'retrans': 0,
-                     'port_tcp': 0,
-                     'close_wait': 0,
-                     'time_wait': 0
-                 }}]
         self.redis_client = redis.StrictRedis(host=self.redis_host, port=self.redis_port, password=self.redis_password,
                                               db=self.redis_db, decode_responses=True)
+        self.client = InfluxDBClient(url=self.influx_url, token=self.influx_token, org=self.influx_org)
+        self.write_api = self.client.write_api(write_options=ASYNCHRONOUS)
         self.monitor()
 
     def get_config_from_server(self):
-        url = f'http://{cfg.getLogging("address")}/register'
+        url = f'{cfg.getLogging("address")}/register/first'
         post_data = {
             'type': 'monitor-agent',
             'host': self.IP,
@@ -121,8 +116,15 @@ class PerMon(object):
                 self.redis_port = res['redis']['port']
                 self.redis_password = res['redis']['password']
                 self.redis_db = res['redis']['db']
-                self.group = 'server_' + res['groupKey']
+                self.influx_url = res['influx']['url']
+                self.influx_org = res['influx']['org']
+                self.influx_token = res['influx']['token']
+                self.influx_bucket = res['influx']['bucket']
+                self.group = res['groupKey']
+                self.monitor_key = 'server_' + res['groupKey']
+                self.nginx_key = 'nginx_' + res['groupKey']
                 self.room_id = res['roomId']
+                self.prefix = res['prefix']
                 time.sleep(1)
                 break
             except:
@@ -150,10 +152,13 @@ class PerMon(object):
         for i in range(self.thread_pool):
             self.executor.submit(self.worker)
 
-        # Put registration and cleanup tasks in the queue
+        # Put registration and cleanup tasks into the queue
         self.monitor_task.put((self.register_agent, None))
         # Put the tasks of the monitoring system into the queue
         self.monitor_task.put((self.write_system_cpu_mem, None))
+        # Put the tasks of the monitoring nginx access log into the queue
+        if self.is_nginx:
+            self.monitor_task.put((self.parse_log, None))
 
     def write_system_cpu_mem(self):
         """
@@ -165,38 +170,41 @@ class PerMon(object):
             while True:
                 res = self.get_system_cpu_io_speed()
                 if res['disk'] is not None and res['cpu'] is not None and res['network'] is not None:
-                    self.line[0]['fields']['cpu'] = res['cpu']
-                    self.line[0]['fields']['iowait'] = res['iowait']
-                    self.line[0]['fields']['usr_cpu'] = res['usr_cpu']
-                    self.line[0]['fields']['mem'] = res['mem']
-                    self.line[0]['fields']['mem_available'] = res['mem_available']
-                    self.line[0]['fields']['jvm'] = res['jvm']
-                    self.line[0]['fields']['disk'] = res['disk']
-                    self.line[0]['fields']['disk_r'] = res['disk_r']
-                    self.line[0]['fields']['disk_w'] = res['disk_w']
-                    self.line[0]['fields']['disk_d'] = res['disk_d']
-                    self.line[0]['fields']['rec'] = res['rec']
-                    self.line[0]['fields']['trans'] = res['trans']
-                    self.line[0]['fields']['net'] = res['network']
-                    self.line[0]['fields']['tcp'] = res['tcp']
-                    self.line[0]['fields']['retrans'] = res['retrans']
-                    self.line[0]['fields']['port_tcp'] = res['port_tcp']
-                    self.line[0]['fields']['close_wait'] = res['close_wait']
-                    self.line[0]['fields']['time_wait'] = res['time_wait']
-                    self.line[0]['fields']['c_time'] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    self.redis_client.xadd(self.influx_stream, {'data': json.dumps(self.line)}, maxlen=100)
+                    pointer = (Point(self.monitor_key)
+                               .tag('host', self.IP)
+                               .tag('room', self.room_id)
+                               .field('cpu', res['cpu'])
+                               .field('iowait', res['iowait'])
+                               .field('usr_cpu', res['usr_cpu'])
+                               .field('mem', res['mem'])
+                               .field('mem_available', res['mem_available'])
+                               .field('jvm', res['jvm'])
+                               .field('disk', res['disk'])
+                               .field('disk_r', res['disk_r'])
+                               .field('disk_w', res['disk_w'])
+                               .field('disk_d', res['disk_d'])
+                               .field('rec', res['rec'])
+                               .field('trans', res['trans'])
+                               .field('net', res['net'])
+                               .field('tcp', res['tcp'])
+                               .field('retrans', res['retrans'])
+                               .field('port_tcp', res['port_tcp'])
+                               .field('close_wait', res['close_wait'])
+                               .field('time_wait', res['time_wait'])
+                               )
+                    self.write_api.write(bucket=self.influx_bucket, org=self.influx_org, record=pointer)
 
                     self.last_cpu_usage.pop(0)
                     self.last_net_usage.pop(0)
                     self.last_io_usage.pop(0)
-                    self.last_cpu_usage.append(self.line[0]['fields']['cpu'])
-                    self.last_net_usage.append(self.line[0]['fields']['net'])
-                    self.last_io_usage.append(self.line[0]['fields']['disk'])
+                    self.last_cpu_usage.append(res['cpu'])
+                    self.last_net_usage.append(res['net'])
+                    self.last_io_usage.append(res['disk'])
                     self.cpu_usage = sum(self.last_cpu_usage) / self.period_length  # CPU usage, with %
-                    self.mem_usage = 1 - self.line[0]['fields']['mem_available'] / self.total_mem  # Memory usage, without %
+                    self.mem_usage = 1 - res['mem_available'] / self.total_mem  # Memory usage, without %
                     self.io_usage = sum(self.last_io_usage) / self.period_length
                     self.net_usage = sum(self.last_net_usage) / self.period_length
-                    logger.debug(f"system: {self.line}")
+                    logger.debug(f"system: {res}")
                 time.sleep(self.system_interval)
         except:
             logger.error(traceback.format_exc())
@@ -639,13 +647,13 @@ class PerMon(object):
             v = int(version.strip())
             if v < 12:
                 msg = 'The iostat version is too low, please upgrade to version 12+, download link: ' \
-                      'http://sebastien.godard.pagesperso-orange.fr/download.html'
+                      'https://sysstat.github.io/versions.html'
                 logger.error(msg)
                 raise Exception(msg)
         except IndexError:
             logger.error(traceback.format_exc())
             msg = 'Please install or upgrade sysstat to version 12+, download link: ' \
-                  'http://sebastien.godard.pagesperso-orange.fr/download.html'
+                  'https://sysstat.github.io/versions.html'
             logger.error(msg)
             raise Exception(msg)
 
@@ -696,11 +704,81 @@ class PerMon(object):
                         disk_start_time = time.time()
                 if self.java_info['port_status'] == 0 and time.time() - java_start_time > 59:
                     self.get_java_info()
+                    post_data['gc'] = self.gc_info
+                    post_data['ffgc'] = self.ffgc
                     java_start_time = time.time()
                 time.sleep(2)
             except:
                 logger.error(traceback.format_exc())
                 time.sleep(3)
+
+    def find_nginx_log(self):
+        try:
+            with os.popen("ps -ef|grep nginx |grep -v grep |grep master|awk '{print $2}'") as p:
+                nginx_pid = p.read().strip()
+            logger.info(f'nginx pid is: {nginx_pid}')
+            if nginx_pid:
+                with os.popen(f'pwdx {nginx_pid}') as p:
+                    res = p.read()
+                nginx_path = res.strip().split(' ')[-1].strip()
+                self.access_log = os.path.join(os.path.dirname(nginx_path), 'logs', 'access.log')
+                if not os.path.exists(self.access_log):
+                    logger.error(f'Not found nginx log: {self.access_log}')
+            else:
+                logger.error('Nginx is not found ~')
+        except:
+            logger.error(traceback.format_exc())
+
+    def parse_log(self):
+        logger.info(f'Nginx log path: {self.access_log}')
+        position = 0
+        with open(self.access_log, mode='r', encoding='utf-8') as f1:
+            lines = f1.readlines()   # jump to current newest line, ignore old lines.
+            while True:
+                try:
+                    lines = f1.readlines()
+                    cur_position = f1.tell()
+                    if cur_position == position:
+                        time.sleep(0.1)
+                        continue
+                    else:
+                        position = cur_position
+                        self.parse_line(lines)
+                except:
+                    logger.error(traceback.format_exc())
+
+    def parse_line(self, lines):
+        for line in lines:
+            if self.prefix in line:
+                if 'static' in line and '.' in line:
+                    continue
+                else:
+                    logger.debug(f'Nginx - access.log -- {line}')
+                    res = self.compiler.match(line).groups()
+                    logger.debug(res)
+                    path = res[3].split('?')[0].strip()
+                    if 'PerformanceTest' in res[9]:
+                        source = 'PerformanceTest'
+                    else:
+                        source = 'Normal'
+                    c_time = res[1].split('+')[0].replace('T', ' ').strip()
+                    try:
+                        rt = float(res[7].split(',')[-1].strip()) if ',' in res[7] else float(res[7].strip())
+                    except ValueError:
+                        logger.error(f'parse error: {line}')
+                        rt = 0.0
+                    error = 0 if int(res[5]) < 400 else 1
+                    pointer = (Point(self.nginx_key)
+                               .tag('source', source)
+                               .tag('path', path)
+                               .field('c_time', c_time)
+                               .field('client', res[0].strip())
+                               .field('status', int(res[5]))
+                               .field('size', int(res[6]))
+                               .field('rt', rt)
+                               .field('error', error)
+                               )
+                    self.write_api.write(bucket=self.influx_bucket, org=self.influx_org, record=pointer)
 
     @staticmethod
     def clear_cache(cache_type):
@@ -789,6 +867,7 @@ def get_ip():
     except:
         logger.error(traceback.format_exc())
     return ip
+
 
 def http_post(url, post_data):
     header = {
