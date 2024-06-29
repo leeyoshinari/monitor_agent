@@ -23,7 +23,6 @@ class PerMon(object):
         self.group = None   # server group id
         self.monitor_key = ''
         self.nginx_key = ''
-        self.influx_stream = 'influx_stream'  # stream name
         self.redis_host = '127.0.0.1'
         self.redis_port = 6379
         self.redis_password = '123456'
