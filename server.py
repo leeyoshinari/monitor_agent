@@ -170,7 +170,7 @@ class PerMon(object):
         try:
             while True:
                 res = self.get_system_cpu_io_speed()
-                if res['disk'] is not None and res['cpu'] is not None and res['network'] is not None:
+                if res['disk'] is not None and res['cpu'] is not None and res['net'] is not None:
                     pointer = (Point(self.monitor_key)
                                .tag('host', self.IP)
                                .tag('room', self.room_id)
@@ -773,7 +773,6 @@ class PerMon(object):
                     pointer = (Point(self.nginx_key)
                                .tag('source', source)
                                .tag('path', path)
-                               .field('c_time', c_time)
                                .field('client', res[0].strip())
                                .field('status', int(res[5]))
                                .field('size', int(res[6]))
