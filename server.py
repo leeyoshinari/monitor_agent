@@ -31,7 +31,8 @@ class PerMon(object):
         self.influx_url = 'http://127.0.0.1:8086'
         self.influx_org = 'influxdb'
         self.influx_token = 'ZgL0t-L5QmFq-JGQg6XhghW_zVWFfzDoDI05dQ=='
-        self.influx_bucket = 'influxdb'
+        self.monitor_bucket = 'influxdb'
+        self.nginx_bucket = 'influxdb'
         self.period_length = cfg.getMonitor('PeriodLength')
         self.frequencyFGC = cfg.getMonitor('frequencyFGC')
         self.isJvmAlert = cfg.getMonitor('isJvmAlert')
@@ -118,7 +119,8 @@ class PerMon(object):
                 self.influx_url = res['influx']['url']
                 self.influx_org = res['influx']['org']
                 self.influx_token = res['influx']['token']
-                self.influx_bucket = res['influx']['bucket']
+                self.monitor_bucket = res['influx']['monitor_bucket']
+                self.nginx_bucket = res['influx']['nginx_bucket']
                 self.group = res['groupKey']
                 self.monitor_key = 'server_' + res['groupKey']
                 self.nginx_key = 'nginx_' + res['groupKey']
@@ -191,7 +193,7 @@ class PerMon(object):
                                .field('close_wait', res['close_wait'])
                                .field('time_wait', res['time_wait'])
                                )
-                    self.write_api.write(bucket=self.influx_bucket, org=self.influx_org, record=pointer)
+                    self.write_api.write(bucket=self.monitor_bucket, org=self.influx_org, record=pointer)
 
                     self.last_cpu_usage.pop(0)
                     self.last_net_usage.pop(0)
@@ -777,7 +779,7 @@ class PerMon(object):
                                .field('rt', rt)
                                .field('error', error)
                                )
-                    self.write_api.write(bucket=self.influx_bucket, org=self.influx_org, record=pointer)
+                    self.write_api.write(bucket=self.nginx_bucket, org=self.influx_org, record=pointer)
 
     @staticmethod
     def clear_cache(cache_type):
