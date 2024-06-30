@@ -186,7 +186,7 @@ class PerMon(object):
                                .field('disk_d', res['disk_d'])
                                .field('rec', res['rec'])
                                .field('trans', res['trans'])
-                               .field('net', res['net'])
+                               .field('network', res['network'])
                                .field('tcp', res['tcp'])
                                .field('retrans', res['retrans'])
                                .field('port_tcp', res['port_tcp'])
@@ -878,7 +878,6 @@ def http_post(url, post_data):
         "Content-Type": "application/json; charset=UTF-8"}
     try:
         res = requests.post(url=url, json=post_data, headers=header)
-        logger.info(f"The result of request is {res.content.decode('unicode_escape')}")
         if res.status_code == 200:
             response_data = json.loads(res.content.decode('unicode_escape'))
             if response_data['code'] == 0:
