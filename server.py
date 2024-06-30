@@ -186,7 +186,7 @@ class PerMon(object):
                                .field('disk_d', res['disk_d'])
                                .field('rec', res['rec'])
                                .field('trans', res['trans'])
-                               .field('network', res['network'])
+                               .field('net', res['net'])
                                .field('tcp', res['tcp'])
                                .field('retrans', res['retrans'])
                                .field('port_tcp', res['port_tcp'])
@@ -336,7 +336,7 @@ class PerMon(object):
             tcp, re_trans = self.get_tcp()
             return {'disk': disk, 'disk_r': total_disk_r, 'disk_w': total_disk_w, 'disk_d': 0.0, 'cpu': cpu, 'iowait': iowait,
                     'usr_cpu': usr_cpu, 'mem': mem, 'mem_available': mem_available, 'rec': rec, 'trans': trans,
-                    'network': network, 'tcp': tcp, 'retrans': re_trans, 'port_tcp': port_tcp, 'close_wait': close_wait,
+                    'net': network, 'tcp': tcp, 'retrans': re_trans, 'port_tcp': port_tcp, 'close_wait': close_wait,
                     'time_wait': time_wait, 'jvm': jvm}
         except:
             logger.error(traceback.format_exc())
