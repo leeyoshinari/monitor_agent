@@ -559,16 +559,17 @@ class PerMon(object):
                     if 'Speed' in line:
                         logger.debug(f'The bandwidth is {line}')
                         res = re.findall(r"(\d+)", line)
-                        try:
-                            speed = int(res[0])
-                            if 'G' in line:
-                                speed = speed * 1024
-                            if 'K' in line:
-                                speed = speed / 1024
-                            self.network_speed = speed
-                            break
-                        except IndexError:
-                            logger.error(traceback.format_exc())
+                        if res:
+                            try:
+                                speed = int(res[0])
+                                if 'G' in line:
+                                    speed = speed * 1024
+                                if 'K' in line:
+                                    speed = speed / 1024
+                                self.network_speed = speed
+                                break
+                            except IndexError:
+                                logger.error(traceback.format_exc())
                 logger.info(f'The bandwidth of ethernet is {self.network_speed}Mb/s')
         except:
             logger.error(traceback.format_exc())
