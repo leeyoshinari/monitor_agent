@@ -17,6 +17,7 @@ from logger import logger, cfg
 
 class PerMon(object):
     def __init__(self):
+        self.thread_pool = 4    # 如果nginx 流量比较大，可适当调整此值，最小值为 4
         self.check_sysstat_version()
         self.IP = get_ip()
         self.room_id = None  # server room id
@@ -27,7 +28,6 @@ class PerMon(object):
         self.redis_port = 6379
         self.redis_password = '123456'
         self.redis_db = 0
-        self.thread_pool = 3
         self.influx_url = 'http://127.0.0.1:8086'
         self.influx_org = 'influxdb'
         self.influx_token = 'ZgL0t-L5QmFq-JGQg6XhghW_zVWFfzDoDI05dQ=='
@@ -745,41 +745,38 @@ class PerMon(object):
                         continue
                     else:
                         position = cur_position
-                        self.parse_line(lines)
+                        for line in lines:
+                            self.monitor_task.put((self.parse_line, line))
                 except:
                     logger.error(traceback.format_exc())
 
-    def parse_line(self, lines):
-        for line in lines:
-            if self.prefix in line:
-                if 'static' in line and '.' in line:
-                    continue
-                else:
-                    logger.debug(f'Nginx - access.log -- {line}')
-                    res = self.compiler.match(line).groups()
-                    logger.debug(res)
-                    path = res[3].split('?')[0].strip()
-                    if 'PerformanceTest' in res[9]:
-                        source = 'PerformanceTest'
-                    else:
-                        source = 'Normal'
-                    c_time = res[1].split('+')[0].replace('T', ' ').strip()
-                    try:
-                        rt = float(res[7].split(',')[-1].strip()) if ',' in res[7] else float(res[7].strip())
-                    except ValueError:
-                        logger.error(f'parse error: {line}')
-                        rt = 0.0
-                    error = 0 if int(res[5]) < 400 else 1
-                    pointer = (Point(self.nginx_key)
-                               .tag('source', source)
-                               .tag('path', path)
-                               .field('client', res[0].strip())
-                               .field('status', int(res[5]))
-                               .field('size', int(res[6]))
-                               .field('rt', rt)
-                               .field('error', error)
-                               )
-                    self.write_api.write(bucket=self.nginx_bucket, org=self.influx_org, record=pointer)
+    def parse_line(self, line):
+        if self.prefix in line and '/static/' not in line:
+            logger.debug(f'Nginx - access.log -- {line}')
+            res = self.compiler.match(line).groups()
+            logger.debug(res)
+            path = res[3].split('?')[0].strip()
+            if 'PerformanceTest' in res[9]:
+                source = 'PerformanceTest'
+            else:
+                source = 'Normal'
+            c_time = res[1].split('+')[0].replace('T', ' ').strip()
+            try:
+                rt = float(res[7].split(',')[-1].strip()) if ',' in res[7] else float(res[7].strip())
+            except ValueError:
+                logger.error(f'parse error: {line}')
+                rt = 0.0
+            error = 0 if int(res[5]) < 400 else 1
+            pointer = (Point(self.nginx_key)
+                       .tag('source', source)
+                       .tag('path', path)
+                       .field('client', res[0].strip())
+                       .field('status', int(res[5]))
+                       .field('size', int(res[6]))
+                       .field('rt', rt)
+                       .field('error', error)
+                       )
+            self.write_api.write(bucket=self.nginx_bucket, org=self.influx_org, record=pointer)
 
     @staticmethod
     def clear_cache(cache_type):
