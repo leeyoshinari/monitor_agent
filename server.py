@@ -756,8 +756,8 @@ class PerMon(object):
             res = self.compiler.match(line).groups()
             logger.debug(res)
             path = res[3].split('?')[0].strip()
-            if 'PerformanceTest' in res[9]:
-                source = 'PerformanceTest'
+            if 'PERFORMANCE_JMETER' in res[9]:
+                source = 'Jmeter'
             else:
                 source = 'Normal'
             c_time = res[1].split('+')[0].replace('T', ' ').strip()
