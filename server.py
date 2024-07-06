@@ -63,8 +63,7 @@ class PerMon(object):
         self.ffgc = 999999
         self.prefix = ''
 
-        # log_format  main   '$remote_addr - $remote_user [$time_iso8601] $request_method $request_uri $server_protocol $status $body_bytes_sent $upstream_response_time "$http_referer" "$http_user_agent" "$http_x_forwarded_for"';
-        self.compiler = re.compile(r'(?P<ip>.*?)- - \[(?P<time>.*?)\] (?P<method>.*?) (?P<path>.*?) (?P<protocol>.*?) (?P<status>.*?) (?P<bytes>.*?) (?P<rt>.*?) "(?P<referer>.*?)" "(?P<ua>.*?)"')
+        self.compiler = re.compile(r'(?P<ip>.*?) - \[(?P<time>.*?)\] "(?P<method>.*?) (?P<path>.*?) (?P<protocol>.*?)/.*" (?P<status>.*?) (?P<bytes>.*?) (?P<rt>.*?) "(?P<referer>.*?)" "(?P<jmeter>.*?)"')
         self.is_nginx = int(cfg.getNginx('isNginx'))
         self.access_log = cfg.getNginx('nginxAccessLogPath')
 
@@ -760,7 +759,7 @@ class PerMon(object):
                 source = 'Jmeter'
             else:
                 source = 'Normal'
-            c_time = res[1].split('+')[0].replace('T', ' ').strip()
+            # c_time = res[1].split('+')[0].replace('T', ' ').strip()
             try:
                 rt = float(res[7].split(',')[-1].strip()) if ',' in res[7] else float(res[7].strip())
             except ValueError:
