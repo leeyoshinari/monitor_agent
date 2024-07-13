@@ -755,7 +755,7 @@ class PerMon(object):
             res = self.compiler.match(line).groups()
             logger.debug(res)
             path = res[3].split('?')[0].strip()
-            if 'PERFORMANCE_JMETER' in res[9]:
+            if 'JMETER' in res[9]:
                 source = 'Jmeter'
             else:
                 source = 'Normal'
@@ -777,14 +777,13 @@ class PerMon(object):
                        )
             self.write_api.write(bucket=self.nginx_bucket, org=self.influx_org, record=pointer)
 
-    @staticmethod
-    def clear_cache(cache_type):
+    def clear_cache(self):
         """
          Cleaning up cache.
         :return:
         """
-        logger.info(f'Start Cleaning up cache: echo {cache_type} > /proc/sys/vm/drop_caches')
-        _ = exec_cmd(f'echo {cache_type} > /proc/sys/vm/drop_caches')
+        logger.info(f'Start Cleaning up cache: echo {self.echo} > /proc/sys/vm/drop_caches')
+        _ = exec_cmd(f'echo {self.echo} > /proc/sys/vm/drop_caches')
         logger.info('Clear the cache successfully.')
 
 
