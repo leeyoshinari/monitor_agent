@@ -740,7 +740,7 @@ class PerMon(object):
                     lines = f1.readlines()
                     cur_position = f1.tell()
                     if cur_position == position:
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                         continue
                     else:
                         position = cur_position
@@ -764,7 +764,7 @@ class PerMon(object):
                 rt = float(res[7].split(',')[-1].strip()) if ',' in res[7] else float(res[7].strip())
             except ValueError:
                 logger.error(f'parse error: {line}')
-                rt = 0.0
+                rt = 0
             error = 0 if int(res[5]) < 400 else 1
             pointer = (Point(self.nginx_key)
                        .tag('source', source)
@@ -773,7 +773,7 @@ class PerMon(object):
                        .field('client', res[0].strip())
                        .field('status', int(res[5]))
                        .field('size', int(res[6]))
-                       .field('rt', rt)
+                       .field('rt', int(rt * 1000))
                        .field('error', error)
                        )
             self.write_api.write(bucket=self.nginx_bucket, org=self.influx_org, record=pointer)
