@@ -759,7 +759,7 @@ class PerMon(object):
                 source = 'Jmeter'
             else:
                 source = 'Normal'
-            # c_time = res[1].split('+')[0].replace('T', ' ').strip()
+            c_time = res[1].split('+')[0].replace('T', ' ').strip()
             try:
                 rt = float(res[7].split(',')[-1].strip()) if ',' in res[7] else float(res[7].strip())
             except ValueError:
@@ -769,6 +769,7 @@ class PerMon(object):
             pointer = (Point(self.nginx_key)
                        .tag('source', source)
                        .tag('path', path)
+                       .field('c_time', c_time)
                        .field('client', res[0].strip())
                        .field('status', int(res[5]))
                        .field('size', int(res[6]))

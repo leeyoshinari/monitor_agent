@@ -14,7 +14,7 @@ This Repository is modified based on the [Source Repository](https://github.com/
 3. Modify Nginx log format in `nginx.conf`. <br>
     Custom log format is
     ```
-    log_format  main   '$remote_addr - [$time_local] "$request" $status $body_bytes_sent $upstream_response_time "$http_referer" "$http_performance_header" "$http_user_agent"';
+    log_format  main   '$remote_addr - [$time_iso8601] "$request" $status $body_bytes_sent $upstream_response_time "$http_referer" "$http_performance_header" "$http_user_agent"';
     ```
     Use custom log format 
     ```
