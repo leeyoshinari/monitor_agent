@@ -20,8 +20,10 @@ class PerMon(object):
         self.thread_pool = 4    # 如果nginx 流量比较大，可适当调整此值，最小值为 4
         self.check_sysstat_version()
         self.IP = get_ip()
-        self.room_id = None  # server room id
-        self.group = None   # server group id
+        self.room_id = None  # 服务器机房id
+        self.group = None   # 服务器所属项目组id
+        self.is_monitor = 1  # 是否监控服务器资源
+        self.is_nginx = 1   # 是否采集 nginx 流量
         self.monitor_key = ''
         self.nginx_key = ''
         self.redis_host = '127.0.0.1'
@@ -37,10 +39,7 @@ class PerMon(object):
         self.frequencyFGC = cfg.getMonitor('frequencyFGC')
         self.isJvmAlert = cfg.getMonitor('isJvmAlert')
         self.echo = cfg.getMonitor('echo')
-        system_interval = cfg.getMonitor('systemInterval')
-        self.system_interval = max(system_interval, 1)   # If the set value is less than 1, the default is 1
-        self.system_interval = self.system_interval - 1.05      # Program running time
-        self.system_interval = max(self.system_interval, 0.01)
+        self.system_interval = 1   # If the set value is less than 1, the default is 1
 
         self.system_version = ''   # system version
         self.cpu_info = ''
@@ -64,7 +63,6 @@ class PerMon(object):
         self.prefix = ''
 
         self.compiler = re.compile(r'(?P<ip>.*?) - \[(?P<time>.*?)\] "(?P<method>.*?) (?P<path>.*?) (?P<protocol>.*?)/.*" (?P<status>.*?) (?P<bytes>.*?) (?P<rt>.*?) "(?P<referer>.*?)" "(?P<jmeter>.*?)"')
-        self.is_nginx = int(cfg.getNginx('isNginx'))
         self.access_log = cfg.getNginx('nginxAccessLogPath')
 
         self.get_system_version()
@@ -75,9 +73,6 @@ class PerMon(object):
         self.get_system_net_speed()
         self.get_total_disk_size()
         self.get_java_info()
-        if not self.access_log and self.is_nginx:
-            self.find_nginx_log()
-
         self.get_config_from_server()
         self.monitor_task = queue.Queue()   # FIFO queue
         self.executor = ThreadPoolExecutor(self.thread_pool)
@@ -87,12 +82,14 @@ class PerMon(object):
         self.last_cpu_usage = [0] * self.period_length   # recently cpu usage
         self.last_net_usage = [0] * self.period_length
         self.last_io_usage = [0] * self.period_length
-
         self.cpu_flag = True    # Flag of whether to send mail when the CPU usage is too high
         self.mem_flag = True    # Flag of whether to send mail when the free memory is too low
         self.echo_flag = True   # Flag of whether to clean up cache
         self.io_flag = True     # Flag of whether to send mail when the IO is too high
         self.net_flag = True    # Flag of whether to send mail when the Network usage is too high
+        if not self.access_log and self.is_nginx:
+            self.find_nginx_log()
+
         self.redis_client = redis.StrictRedis(host=self.redis_host, port=self.redis_port, password=self.redis_password,
                                               db=self.redis_db, decode_responses=True)
         self.client = InfluxDBClient(url=self.influx_url, token=self.influx_token, org=self.influx_org)
@@ -125,6 +122,12 @@ class PerMon(object):
                 self.nginx_key = 'nginx_' + res['groupKey']
                 self.room_id = res['roomId']
                 self.prefix = res['prefix']
+                self.is_monitor = res['monitor']['is_monitor']
+                self.is_nginx = res['monitor']['is_nginx']
+                system_interval = res['monitor']['sampling_interval']
+                self.system_interval = max(system_interval, 1)  # If the set value is less than 1, the default is 1
+                self.system_interval = self.system_interval - 1.05  # Program running time
+                self.system_interval = max(self.system_interval, 0.01)
                 time.sleep(1)
                 break
             except:
@@ -153,12 +156,11 @@ class PerMon(object):
             self.executor.submit(self.worker)
 
         # Put registration and cleanup tasks into the queue
-        self.monitor_task.put((self.register_agent, None))
+        if self.is_monitor and self.is_nginx: self.monitor_task.put((self.register_agent, None))
         # Put the tasks of the monitoring system into the queue
-        self.monitor_task.put((self.write_system_cpu_mem, None))
+        if self.is_monitor: self.monitor_task.put((self.write_system_cpu_mem, None))
         # Put the tasks of the monitoring nginx access log into the queue
-        if self.is_nginx:
-            self.monitor_task.put((self.parse_log, None))
+        if self.is_nginx: self.monitor_task.put((self.parse_log, None))
 
     def write_system_cpu_mem(self):
         """
