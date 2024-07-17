@@ -65,6 +65,7 @@ class PerMon(object):
         self.compiler = re.compile(r'(?P<ip>.*?) - \[(?P<time>.*?)\] "(?P<method>.*?) (?P<path>.*?) (?P<protocol>.*?)/.*" (?P<status>.*?) (?P<bytes>.*?) (?P<rt>.*?) "(?P<referer>.*?)" "(?P<jmeter>.*?)"')
         self.access_log = cfg.getNginx('nginxAccessLogPath')
 
+        self.get_config_from_server()
         self.get_system_version()
         self.get_cpu_cores()
         self.get_total_mem()
@@ -73,7 +74,6 @@ class PerMon(object):
         self.get_system_net_speed()
         self.get_total_disk_size()
         self.get_java_info()
-        self.get_config_from_server()
         self.monitor_task = queue.Queue()   # FIFO queue
         self.executor = ThreadPoolExecutor(self.thread_pool)
 
@@ -633,6 +633,7 @@ class PerMon(object):
                         self.java_info['status'] = 0
                         self.java_info['port_status'] = 0
                 else:
+                    logger.warning(f"Not found java service, group name is {self.group}")
                     self.java_info['status'] = 0
                     self.java_info['port_status'] = 0
         except Exception as err:
