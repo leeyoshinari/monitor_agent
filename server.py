@@ -636,8 +636,8 @@ class PerMon(object):
                     logger.warning(f"Not found java service, group name is {self.group}")
                     self.java_info['status'] = 0
                     self.java_info['port_status'] = 0
-        except Exception as err:
-            logger.warning(err)
+        except:
+            logger.warning(traceback.format_exc())
             self.java_info['status'] = 0
             self.java_info['port_status'] = 0
 
