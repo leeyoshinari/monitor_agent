@@ -26,12 +26,17 @@ This Repository is modified based on the [Source Repository](https://github.com/
 4. Package. Using `pyinstaller` to package python code. 
 - (1) Enter folder, run:<br>
     ```shell
-    pyinstaller -F server.py -p logger.py -p config.py -p __init__.py --hidden-import logger --hidden-import config
+    pyinstaller --onefile --name=server server.py --hidden-import logger --hidden-import config
     ```
-- (2) Copy `config.conf` to the `dist` folder, cmd: `cp config.conf dist/`
-- (3) Enter `dist` folder, zip files, cmd: `zip monitor_agent.zip server config.conf`
-- (4) Upload zip file to [MyPlatform](https://github.com/leeyoshinari/MyPlatform.git)
-- (5) Deploy monitor_agent
+- (2) modify `server.spec`, modify `pathex` to current folder, for example: `pathex=['/home/monitor_agent']`.
+- (3) Run:<br>
+    ```shell
+    pyinstaller server.spec
+    ```
+- (4) Copy `config.conf` to the `dist` folder, cmd: `cp config.conf dist/`
+- (5) Enter `dist` folder, zip files, cmd: `zip monitor_agent.zip server config.conf`
+- (6) Upload zip file to [MyPlatform](https://github.com/leeyoshinari/MyPlatform.git)
+- (7) Deploy monitor_agent
    
 NOTE: For Linux Server, the executable file packaged on the server of the CentOS system X86 architecture can only run on the server of the CentOS system X86 architecture; servers of other system and architecture need to be repackaged. <br>
 

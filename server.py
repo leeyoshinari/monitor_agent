@@ -316,11 +316,12 @@ class PerMon(object):
                 disk = sum(disk_list)
 
             mem, mem_available = self.get_free_memory()
-            if self.java_info['status'] == 1 and self.java_info['port_status'] == 1:
-                tcp_num = self.get_port_tcp(self.java_info['port'], self.java_info['pid'])
+            if self.java_info['port']:
+                tcp_num = self.get_port_tcp(self.java_info['port'])
                 port_tcp = tcp_num.get('tcp', 0)
                 close_wait = tcp_num.get('close_wait', 0)
                 time_wait = tcp_num.get('time_wait', 0)
+            if self.java_info['status'] == 1 and self.java_info['port_status'] == 1:
                 jvm = self.get_jvm(self.java_info['port'], self.java_info['pid'])  # get JVM size
 
             if bps1 and bps2:
@@ -376,7 +377,7 @@ class PerMon(object):
         self.retrans_num = int(tcps[-4])
         return tcp, re_trans
 
-    def get_port_tcp(self, port, pid):
+    def get_port_tcp(self, port):
         """
         Get the number of TCP connections for the port
         :param port: port
@@ -386,7 +387,7 @@ class PerMon(object):
         try:
             with os.popen(f'ss -ant |grep {port}') as p:
                 res = p.read()
-            if res.count('LISTEN') == 0 and res.count(pid) == 0:
+            if res.count('LISTEN') == 0:
                 self.java_info['port_status'] = 0
                 self.java_info['status'] = 0
                 self.gc_info = [-1, -1, -1, -1]
