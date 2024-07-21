@@ -620,8 +620,10 @@ class PerMon(object):
                 pid = exec_cmd("ps -ef |grep " + self.group + " |grep -v grep |awk '{print $1}'")
                 if pid and pid[0].strip():
                     self.java_info['pid'] = pid[0].strip()
-                    port = exec_cmd("ss -antpl|grep " + self.java_info['pid'] + " |tr -s ' ' |awk '{print $4}' | awk -F ':' '{print $2}'")[0]
-                    self.java_info['port'] = port.strip()
+                    port = exec_cmd("ss -antpl|grep " + self.java_info['pid'] + " |tr -s ' ' |awk '{print $4}' | awk -F ':' '{print $2}'")
+                    logger.debug(port)
+                    if port and port[0].strip():
+                        self.java_info['port'] = port[0].strip()
                     try:
                         result = exec_cmd(f'jstat -gc {self.java_info["pid"]} |tr -s " "')[1]
                         res = result.strip().split(' ')
