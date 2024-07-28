@@ -193,6 +193,9 @@ class PerMon(object):
                                .field('port_tcp', res['port_tcp'])
                                .field('close_wait', res['close_wait'])
                                .field('time_wait', res['time_wait'])
+                               .field('load1', res['load1'])
+                               .field('load5', res['load5'])
+                               .field('load15', res['load15'])
                                )
                     self.write_api.write(bucket=self.monitor_bucket, org=self.influx_org, record=pointer)
 
@@ -336,10 +339,11 @@ class PerMon(object):
                 logger.debug(f'The bandwidth of ethernet is: Receive {rec}MB/s, Transmit {trans}MB/s, Ratio {network}%')
 
             tcp, re_trans = self.get_tcp()
+            load1, load5, load15 = self.get_cpu_load()
             return {'disk': disk, 'disk_r': total_disk_r, 'disk_w': total_disk_w, 'disk_d': 0.0, 'cpu': cpu, 'iowait': iowait,
                     'usr_cpu': usr_cpu, 'mem': mem, 'mem_available': mem_available, 'rec': rec, 'trans': trans,
                     'net': network, 'tcp': tcp, 'retrans': re_trans, 'port_tcp': port_tcp, 'close_wait': close_wait,
-                    'time_wait': time_wait, 'jvm': jvm}
+                    'time_wait': time_wait, 'jvm': jvm, 'load1': load1, 'load5': load5, 'load15': load15}
         except:
             logger.error(traceback.format_exc())
             return {}
@@ -443,6 +447,21 @@ class PerMon(object):
             self.cpu_info = f'total CPU cores is {self.cpu_cores}, CPU model is {cpu_model} '
         else:
             self.cpu_info = f'total CPU cores is {self.cpu_cores}'
+
+    @staticmethod
+    def get_cpu_load():
+        load1 = 0.0
+        load5 = 0.0
+        load15 = 0.0
+        try:
+            res = exec_cmd('uptime')[0]
+            loads = res.split(',')
+            load15 = float(loads[-1].strip())
+            load5 = float(loads[-2].strip())
+            load1 = float(loads[-3].split(':')[-1].strip())
+        except:
+            logger.error(traceback.format_exc())
+        return load1, load5, load15
 
     def get_total_mem(self):
         """
